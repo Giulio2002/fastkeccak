@@ -1,4 +1,4 @@
-module github.com/Giulio2002/fast_keccak
+module github.com/Giulio2002/fastkeccak
 
 go 1.24.0
 
