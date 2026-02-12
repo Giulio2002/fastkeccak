@@ -27,7 +27,6 @@ digest := h.Sum256()
 
 ## Benchmarks
 
-Apple M4, `go1.25.5 darwin/arm64`:
 
 ### faster_keccak vs x/crypto/sha3
 
@@ -42,7 +41,6 @@ Apple M4, `go1.25.5 darwin/arm64`:
 
 Zero allocations across all sizes (x/crypto allocates 32 B/op).
 
-on x86_64, nothing changes, the two are equal!
 
 ## Testing
 
