@@ -6,8 +6,8 @@
 
 #include "textflag.h"
 
-// func keccakF1600NEON(a *[200]byte)
-TEXT ·keccakF1600NEON(SB), $200-8
+// func keccakF1600(a *[200]byte)
+TEXT ·keccakF1600(SB), $200-8
 	MOVD	a+0(FP), R0
 	MOVD	$round_consts<>(SB), R1
 	MOVD	$24, R2 // counter for loop

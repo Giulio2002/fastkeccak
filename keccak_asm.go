@@ -1,0 +1,128 @@
+//go:build (amd64 || arm64) && !purego
+
+package keccak
+
+import "unsafe"
+
+// sponge is the core Keccak-256 sponge state used by native (asm) implementations.
+type sponge struct {
+	state     [200]byte
+	buf       [rate]byte
+	absorbed  int
+	squeezing bool
+	readIdx   int // index into buf for next Read byte
+}
+
+// Reset resets the sponge to its initial state.
+func (s *sponge) Reset() {
+	s.state = [200]byte{}
+	s.absorbed = 0
+	s.squeezing = false
+	s.readIdx = 0
+}
+
+// Write absorbs data into the sponge.
+// Panics if called after Read.
+func (s *sponge) Write(p []byte) {
+	if s.squeezing {
+		panic("keccak: Write after Read")
+	}
+	if s.absorbed > 0 {
+		n := copy(s.buf[s.absorbed:rate], p)
+		s.absorbed += n
+		p = p[n:]
+		if s.absorbed == rate {
+			xorIn(&s.state, s.buf[:])
+			keccakF1600(&s.state)
+			s.absorbed = 0
+		}
+	}
+
+	for len(p) >= rate {
+		xorIn(&s.state, p[:rate])
+		keccakF1600(&s.state)
+		p = p[rate:]
+	}
+
+	if len(p) > 0 {
+		s.absorbed = copy(s.buf[:], p)
+	}
+}
+
+// Sum256 finalizes and returns the 32-byte Keccak-256 digest.
+// Does not modify the sponge state.
+func (s *sponge) Sum256() [32]byte {
+	state := s.state
+	xorIn(&state, s.buf[:s.absorbed])
+	state[s.absorbed] ^= 0x01
+	state[rate-1] ^= 0x80
+	keccakF1600(&state)
+	return [32]byte(state[:32])
+}
+
+// Read squeezes an arbitrary number of bytes from the sponge.
+// On the first call, it pads and permutes, transitioning from absorbing to squeezing.
+// Subsequent calls to Write will panic. It never returns an error.
+func (s *sponge) Read(out []byte) (int, error) {
+	if !s.squeezing {
+		s.padAndSqueeze()
+	}
+
+	n := len(out)
+	for len(out) > 0 {
+		x := copy(out, s.buf[s.readIdx:rate])
+		s.readIdx += x
+		out = out[x:]
+		if s.readIdx == rate {
+			keccakF1600(&s.state)
+			copy(s.buf[:], s.state[:rate])
+			s.readIdx = 0
+		}
+	}
+	return n, nil
+}
+
+func (s *sponge) padAndSqueeze() {
+	xorIn(&s.state, s.buf[:s.absorbed])
+	s.state[s.absorbed] ^= 0x01
+	s.state[rate-1] ^= 0x80
+	keccakF1600(&s.state)
+	copy(s.buf[:], s.state[:rate])
+	s.squeezing = true
+	s.readIdx = 0
+}
+
+// sum256Sponge computes Keccak-256 in one shot using the assembly permutation.
+func sum256Sponge(data []byte) [32]byte {
+	var state [200]byte
+
+	for len(data) >= rate {
+		xorIn(&state, data[:rate])
+		keccakF1600(&state)
+		data = data[rate:]
+	}
+
+	xorIn(&state, data)
+	state[len(data)] ^= 0x01
+	state[rate-1] ^= 0x80
+	keccakF1600(&state)
+
+	return [32]byte(state[:32])
+}
+
+func xorIn(state *[200]byte, data []byte) {
+	n := len(data) >> 3
+	stateU64 := (*[25]uint64)(unsafe.Pointer(state))
+	for i := 0; i < n; i++ {
+		stateU64[i] ^= le64(data[8*i:])
+	}
+	for i := n << 3; i < len(data); i++ {
+		state[i] ^= data[i]
+	}
+}
+
+func le64(b []byte) uint64 {
+	_ = b[7]
+	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 |
+		uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56
+}
