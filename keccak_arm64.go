@@ -3,8 +3,6 @@
 package keccak
 
 import (
-	"hash"
-	"io"
 	"runtime"
 
 	"golang.org/x/crypto/sha3"
@@ -39,7 +37,7 @@ func sum256XCrypto(data []byte) [32]byte {
 // Uses NEON SHA3 assembly when available, x/crypto/sha3 otherwise.
 type Hasher struct {
 	sponge
-	xc hash.Hash // x/crypto fallback
+	xc KeccakState // x/crypto fallback
 }
 
 // Reset resets the hasher to its initial state.
@@ -48,7 +46,7 @@ func (h *Hasher) Reset() {
 		h.sponge.Reset()
 	} else {
 		if h.xc == nil {
-			h.xc = sha3.NewLegacyKeccak256()
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
 		} else {
 			h.xc.Reset()
 		}
@@ -60,7 +58,7 @@ func (h *Hasher) Reset() {
 func (h *Hasher) Write(p []byte) (int, error) {
 	if !useSHA3 {
 		if h.xc == nil {
-			h.xc = sha3.NewLegacyKeccak256()
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
 		}
 		return h.xc.Write(p)
 	}
@@ -100,9 +98,9 @@ func (h *Hasher) Sum(b []byte) []byte {
 func (h *Hasher) Read(out []byte) (int, error) {
 	if !useSHA3 {
 		if h.xc == nil {
-			h.xc = sha3.NewLegacyKeccak256()
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
 		}
-		return h.xc.(io.Reader).Read(out)
+		return h.xc.Read(out)
 	}
 	return h.sponge.Read(out)
 }

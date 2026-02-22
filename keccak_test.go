@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
-	"io"
 	"testing"
 
 	"golang.org/x/crypto/sha3"
@@ -100,7 +99,7 @@ func TestReadMatchesXCrypto(t *testing.T) {
 		ref := sha3.NewLegacyKeccak256()
 		ref.Write(data)
 		want := make([]byte, readLen)
-		ref.(io.Reader).Read(want)
+		ref.(KeccakState).Read(want)
 
 		var h Hasher
 		h.Write(data)
@@ -145,7 +144,7 @@ func TestReadEmpty(t *testing.T) {
 	// Read from hasher with no data written.
 	ref := sha3.NewLegacyKeccak256()
 	want := make([]byte, 32)
-	ref.(io.Reader).Read(want)
+	ref.(KeccakState).Read(want)
 
 	var h Hasher
 	got := make([]byte, 32)
@@ -235,7 +234,7 @@ func FuzzSum256(f *testing.F) {
 		ref.Reset()
 		ref.Write(data)
 		wantExt := make([]byte, 200)
-		ref.(io.Reader).Read(wantExt)
+		ref.(KeccakState).Read(wantExt)
 
 		h.Reset()
 		h.Write(data)

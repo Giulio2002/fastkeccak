@@ -3,9 +3,6 @@
 package keccak
 
 import (
-	"hash"
-	"io"
-
 	"golang.org/x/crypto/sha3"
 )
 
@@ -21,12 +18,12 @@ func Sum256(data []byte) [32]byte {
 
 // Hasher is a streaming Keccak-256 hasher wrapping x/crypto/sha3.
 type Hasher struct {
-	h hash.Hash
+	h KeccakState
 }
 
 func (h *Hasher) init() {
 	if h.h == nil {
-		h.h = sha3.NewLegacyKeccak256()
+		h.h = sha3.NewLegacyKeccak256().(KeccakState)
 	}
 }
 
@@ -70,5 +67,5 @@ func (h *Hasher) BlockSize() int { return rate }
 // Subsequent calls to Write will panic. It never returns an error.
 func (h *Hasher) Read(out []byte) (int, error) {
 	h.init()
-	return h.h.(io.Reader).Read(out)
+	return h.h.Read(out)
 }
