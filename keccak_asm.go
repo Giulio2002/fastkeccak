@@ -10,7 +10,7 @@ type sponge struct {
 	buf       [rate]byte
 	absorbed  int
 	squeezing bool
-	readIdx   int // index into buf for next Read byte
+	readIdx   int // index into state for next Read byte
 }
 
 // Reset resets the sponge to its initial state.
@@ -70,12 +70,11 @@ func (s *sponge) Read(out []byte) (int, error) {
 
 	n := len(out)
 	for len(out) > 0 {
-		x := copy(out, s.buf[s.readIdx:rate])
+		x := copy(out, s.state[s.readIdx:rate])
 		s.readIdx += x
 		out = out[x:]
 		if s.readIdx == rate {
 			keccakF1600(&s.state)
-			copy(s.buf[:], s.state[:rate])
 			s.readIdx = 0
 		}
 	}
@@ -87,7 +86,6 @@ func (s *sponge) padAndSqueeze() {
 	s.state[s.absorbed] ^= 0x01
 	s.state[rate-1] ^= 0x80
 	keccakF1600(&s.state)
-	copy(s.buf[:], s.state[:rate])
 	s.squeezing = true
 	s.readIdx = 0
 }
