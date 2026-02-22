@@ -23,14 +23,15 @@ func (s *sponge) Reset() {
 
 // Write absorbs data into the sponge.
 // Panics if called after Read.
-func (s *sponge) Write(p []byte) {
+func (s *sponge) Write(p []byte) (int, error) {
 	if s.squeezing {
 		panic("keccak: Write after Read")
 	}
+	n := len(p)
 	if s.absorbed > 0 {
-		n := copy(s.buf[s.absorbed:rate], p)
-		s.absorbed += n
-		p = p[n:]
+		x := copy(s.buf[s.absorbed:rate], p)
+		s.absorbed += x
+		p = p[x:]
 		if s.absorbed == rate {
 			xorIn(&s.state, s.buf[:])
 			keccakF1600(&s.state)
@@ -47,6 +48,7 @@ func (s *sponge) Write(p []byte) {
 	if len(p) > 0 {
 		s.absorbed = copy(s.buf[:], p)
 	}
+	return n, nil
 }
 
 // Sum256 finalizes and returns the 32-byte Keccak-256 digest.
@@ -59,6 +61,19 @@ func (s *sponge) Sum256() [32]byte {
 	keccakF1600(&state)
 	return [32]byte(state[:32])
 }
+
+// Sum appends the current Keccak-256 digest to b and returns the resulting slice.
+// Does not modify the sponge state.
+func (s *sponge) Sum(b []byte) []byte {
+	d := s.Sum256()
+	return append(b, d[:]...)
+}
+
+// Size returns the number of bytes Sum will produce (32).
+func (s *sponge) Size() int { return 32 }
+
+// BlockSize returns the sponge rate in bytes (136).
+func (s *sponge) BlockSize() int { return rate }
 
 // Read squeezes an arbitrary number of bytes from the sponge.
 // On the first call, it pads and permutes, transitioning from absorbing to squeezing.

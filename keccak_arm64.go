@@ -57,15 +57,14 @@ func (h *Hasher) Reset() {
 
 // Write absorbs data into the hasher.
 // Panics if called after Read.
-func (h *Hasher) Write(p []byte) {
+func (h *Hasher) Write(p []byte) (int, error) {
 	if !useSHA3 {
 		if h.xc == nil {
 			h.xc = sha3.NewLegacyKeccak256()
 		}
-		h.xc.Write(p)
-		return
+		return h.xc.Write(p)
 	}
-	h.sponge.Write(p)
+	return h.sponge.Write(p)
 }
 
 // Sum256 finalizes and returns the 32-byte Keccak-256 digest.
@@ -80,6 +79,19 @@ func (h *Hasher) Sum256() [32]byte {
 		return out
 	}
 	return h.sponge.Sum256()
+}
+
+// Sum appends the current Keccak-256 digest to b and returns the resulting slice.
+// Does not modify the hasher state.
+func (h *Hasher) Sum(b []byte) []byte {
+	if !useSHA3 {
+		if h.xc == nil {
+			d := Sum256(nil)
+			return append(b, d[:]...)
+		}
+		return h.xc.Sum(b)
+	}
+	return h.sponge.Sum(b)
 }
 
 // Read squeezes an arbitrary number of bytes from the sponge.

@@ -38,9 +38,9 @@ func (h *Hasher) Reset() {
 
 // Write absorbs data into the hasher.
 // Panics if called after Read.
-func (h *Hasher) Write(p []byte) {
+func (h *Hasher) Write(p []byte) (int, error) {
 	h.init()
-	h.h.Write(p)
+	return h.h.Write(p)
 }
 
 // Sum256 finalizes and returns the 32-byte Keccak-256 digest.
@@ -51,6 +51,19 @@ func (h *Hasher) Sum256() [32]byte {
 	h.h.Sum(out[:0])
 	return out
 }
+
+// Sum appends the current Keccak-256 digest to b and returns the resulting slice.
+// Does not modify the hasher state.
+func (h *Hasher) Sum(b []byte) []byte {
+	h.init()
+	return h.h.Sum(b)
+}
+
+// Size returns the number of bytes Sum will produce (32).
+func (h *Hasher) Size() int { return 32 }
+
+// BlockSize returns the sponge rate in bytes (136).
+func (h *Hasher) BlockSize() int { return rate }
 
 // Read squeezes an arbitrary number of bytes from the sponge.
 // On the first call, it pads and permutes, transitioning from absorbing to squeezing.
