@@ -4,6 +4,7 @@ package keccak
 
 import (
 	"hash"
+	"io"
 	"runtime"
 	"unsafe"
 
@@ -53,9 +54,11 @@ func sum256XCrypto(data []byte) [32]byte {
 // Uses NEON SHA3 assembly when available, x/crypto/sha3 otherwise.
 type Hasher struct {
 	// NEON sponge state
-	state    [200]byte
-	buf      [rate]byte
-	absorbed int
+	state     [200]byte
+	buf       [rate]byte
+	absorbed  int
+	squeezing bool
+	readIdx   int // index into buf for next Read byte
 	// x/crypto fallback
 	xc hash.Hash
 }
@@ -65,6 +68,8 @@ func (h *Hasher) Reset() {
 	if useSHA3 {
 		h.state = [200]byte{}
 		h.absorbed = 0
+		h.squeezing = false
+		h.readIdx = 0
 	} else {
 		if h.xc == nil {
 			h.xc = sha3.NewLegacyKeccak256()
@@ -75,7 +80,11 @@ func (h *Hasher) Reset() {
 }
 
 // Write absorbs data into the hasher.
+// Panics if called after Read.
 func (h *Hasher) Write(p []byte) {
+	if h.squeezing {
+		panic("keccak: Write after Read")
+	}
 	if !useSHA3 {
 		if h.xc == nil {
 			h.xc = sha3.NewLegacyKeccak256()
@@ -124,6 +133,45 @@ func (h *Hasher) Sum256() [32]byte {
 	state[rate-1] ^= 0x80
 	keccakF1600NEON(&state)
 	return [32]byte(state[:32])
+}
+
+// Read squeezes an arbitrary number of bytes from the sponge.
+// On the first call, it pads and permutes, transitioning from absorbing to squeezing.
+// Subsequent calls to Write will panic. It never returns an error.
+func (h *Hasher) Read(out []byte) (int, error) {
+	if !useSHA3 {
+		if h.xc == nil {
+			h.xc = sha3.NewLegacyKeccak256()
+		}
+		return h.xc.(io.Reader).Read(out)
+	}
+
+	if !h.squeezing {
+		h.padAndSqueeze()
+	}
+
+	n := len(out)
+	for len(out) > 0 {
+		x := copy(out, h.buf[h.readIdx:rate])
+		h.readIdx += x
+		out = out[x:]
+		if h.readIdx == rate {
+			keccakF1600NEON(&h.state)
+			copy(h.buf[:], h.state[:rate])
+			h.readIdx = 0
+		}
+	}
+	return n, nil
+}
+
+func (h *Hasher) padAndSqueeze() {
+	xorIn(&h.state, h.buf[:h.absorbed])
+	h.state[h.absorbed] ^= 0x01
+	h.state[rate-1] ^= 0x80
+	keccakF1600NEON(&h.state)
+	copy(h.buf[:], h.state[:rate])
+	h.squeezing = true
+	h.readIdx = 0
 }
 
 func xorIn(state *[200]byte, data []byte) {

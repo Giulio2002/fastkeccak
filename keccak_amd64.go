@@ -27,19 +27,27 @@ func Sum256(data []byte) [32]byte {
 
 // Hasher is a streaming Keccak-256 hasher. Designed for stack allocation.
 type Hasher struct {
-	state    [200]byte
-	buf      [rate]byte
-	absorbed int
+	state     [200]byte
+	buf       [rate]byte
+	absorbed  int
+	squeezing bool
+	readIdx   int // index into buf for next Read byte
 }
 
 // Reset resets the hasher to its initial state.
 func (h *Hasher) Reset() {
 	h.state = [200]byte{}
 	h.absorbed = 0
+	h.squeezing = false
+	h.readIdx = 0
 }
 
 // Write absorbs data into the hasher.
+// Panics if called after Read.
 func (h *Hasher) Write(p []byte) {
+	if h.squeezing {
+		panic("keccak: Write after Read")
+	}
 	if h.absorbed > 0 {
 		n := copy(h.buf[h.absorbed:rate], p)
 		h.absorbed += n
@@ -71,6 +79,38 @@ func (h *Hasher) Sum256() [32]byte {
 	state[rate-1] ^= 0x80
 	keccakF1600(&state)
 	return [32]byte(state[:32])
+}
+
+// Read squeezes an arbitrary number of bytes from the sponge.
+// On the first call, it pads and permutes, transitioning from absorbing to squeezing.
+// Subsequent calls to Write will panic. It never returns an error.
+func (h *Hasher) Read(out []byte) (int, error) {
+	if !h.squeezing {
+		h.padAndSqueeze()
+	}
+
+	n := len(out)
+	for len(out) > 0 {
+		x := copy(out, h.buf[h.readIdx:rate])
+		h.readIdx += x
+		out = out[x:]
+		if h.readIdx == rate {
+			keccakF1600(&h.state)
+			copy(h.buf[:], h.state[:rate])
+			h.readIdx = 0
+		}
+	}
+	return n, nil
+}
+
+func (h *Hasher) padAndSqueeze() {
+	xorIn(&h.state, h.buf[:h.absorbed])
+	h.state[h.absorbed] ^= 0x01
+	h.state[rate-1] ^= 0x80
+	keccakF1600(&h.state)
+	copy(h.buf[:], h.state[:rate])
+	h.squeezing = true
+	h.readIdx = 0
 }
 
 func xorIn(state *[200]byte, data []byte) {

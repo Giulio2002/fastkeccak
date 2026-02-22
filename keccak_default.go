@@ -4,6 +4,7 @@ package keccak
 
 import (
 	"hash"
+	"io"
 
 	"golang.org/x/crypto/sha3"
 )
@@ -36,6 +37,7 @@ func (h *Hasher) Reset() {
 }
 
 // Write absorbs data into the hasher.
+// Panics if called after Read.
 func (h *Hasher) Write(p []byte) {
 	h.init()
 	h.h.Write(p)
@@ -48,4 +50,12 @@ func (h *Hasher) Sum256() [32]byte {
 	var out [32]byte
 	h.h.Sum(out[:0])
 	return out
+}
+
+// Read squeezes an arbitrary number of bytes from the sponge.
+// On the first call, it pads and permutes, transitioning from absorbing to squeezing.
+// Subsequent calls to Write will panic. It never returns an error.
+func (h *Hasher) Read(out []byte) (int, error) {
+	h.init()
+	return h.h.(io.Reader).Read(out)
 }

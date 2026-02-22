@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"testing"
 
 	"golang.org/x/crypto/sha3"
@@ -79,6 +80,110 @@ func TestHasherMultiBlock(t *testing.T) {
 	}
 }
 
+func TestReadMatchesSum256(t *testing.T) {
+	// Read of 32 bytes should produce the same result as Sum256.
+	data := []byte("hello")
+	var h Hasher
+	h.Write(data)
+	var got [32]byte
+	h.Read(got[:])
+	want := Sum256(data)
+	if got != want {
+		t.Fatalf("Read(32) = %x, want %x", got, want)
+	}
+}
+
+func TestReadMatchesXCrypto(t *testing.T) {
+	// Compare Read output against x/crypto/sha3 for various lengths.
+	for _, readLen := range []int{32, 64, 136, 200, 500} {
+		data := []byte("test data for read comparison")
+		ref := sha3.NewLegacyKeccak256()
+		ref.Write(data)
+		want := make([]byte, readLen)
+		ref.(io.Reader).Read(want)
+
+		var h Hasher
+		h.Write(data)
+		got := make([]byte, readLen)
+		h.Read(got)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("Read(%d) mismatch:\ngot:  %x\nwant: %x", readLen, got, want)
+		}
+	}
+}
+
+func TestReadMultipleCalls(t *testing.T) {
+	// Multiple Read calls should produce the same output as one large Read.
+	data := []byte("streaming read test")
+
+	// One large read.
+	var h1 Hasher
+	h1.Write(data)
+	all := make([]byte, 300)
+	h1.Read(all)
+
+	// Multiple small reads.
+	var h2 Hasher
+	h2.Write(data)
+	var parts []byte
+	for i := 0; i < 300; {
+		chunk := 37
+		if i+chunk > 300 {
+			chunk = 300 - i
+		}
+		buf := make([]byte, chunk)
+		h2.Read(buf)
+		parts = append(parts, buf...)
+		i += chunk
+	}
+	if !bytes.Equal(all, parts) {
+		t.Fatalf("multi-read mismatch:\ngot:  %x\nwant: %x", parts, all)
+	}
+}
+
+func TestReadEmpty(t *testing.T) {
+	// Read from hasher with no data written.
+	ref := sha3.NewLegacyKeccak256()
+	want := make([]byte, 32)
+	ref.(io.Reader).Read(want)
+
+	var h Hasher
+	got := make([]byte, 32)
+	h.Read(got)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("Read empty mismatch:\ngot:  %x\nwant: %x", got, want)
+	}
+}
+
+func TestReadAfterReset(t *testing.T) {
+	var h Hasher
+	h.Write([]byte("first"))
+	h.Read(make([]byte, 32))
+
+	// Reset should allow Write again.
+	h.Reset()
+	h.Write([]byte("second"))
+	got := make([]byte, 32)
+	h.Read(got)
+
+	want := Sum256([]byte("second"))
+	if !bytes.Equal(got, want[:]) {
+		t.Fatalf("Read after Reset mismatch:\ngot:  %x\nwant: %x", got, want)
+	}
+}
+
+func TestWriteAfterReadPanics(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected panic on Write after Read")
+		}
+	}()
+	var h Hasher
+	h.Write([]byte("data"))
+	h.Read(make([]byte, 32))
+	h.Write([]byte("more")) // should panic
+}
+
 func FuzzSum256(f *testing.F) {
 	f.Add([]byte(nil))
 	f.Add([]byte("hello"))
@@ -115,6 +220,29 @@ func FuzzSum256(f *testing.F) {
 		gotS := h.Sum256()
 		if !bytes.Equal(gotS[:], want) {
 			t.Fatalf("Hasher byte-by-byte mismatch for len=%d\ngot:  %x\nwant: %x", len(data), gotS, want)
+		}
+
+		// Test Read (32 bytes) matches Sum256.
+		h.Reset()
+		h.Write(data)
+		gotRead := make([]byte, 32)
+		h.Read(gotRead)
+		if !bytes.Equal(gotRead, want) {
+			t.Fatalf("Read(32) mismatch for len=%d\ngot:  %x\nwant: %x", len(data), gotRead, want)
+		}
+
+		// Test Read (extended output) matches x/crypto.
+		ref.Reset()
+		ref.Write(data)
+		wantExt := make([]byte, 200)
+		ref.(io.Reader).Read(wantExt)
+
+		h.Reset()
+		h.Write(data)
+		gotExt := make([]byte, 200)
+		h.Read(gotExt)
+		if !bytes.Equal(gotExt, wantExt) {
+			t.Fatalf("Read(200) mismatch for len=%d\ngot:  %x\nwant: %x", len(data), gotExt, wantExt)
 		}
 	})
 }
