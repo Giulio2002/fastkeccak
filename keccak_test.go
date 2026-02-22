@@ -320,3 +320,20 @@ func BenchmarkFasterKeccakHasher(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkKeccakStreaming_Sha3 benchmarks the standard sha3 streaming hasher (Reset+Write+Read).
+func BenchmarkKeccakStreaming_Sha3(b *testing.B) {
+	data := make([]byte, 32)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	h := sha3.NewLegacyKeccak256().(KeccakState)
+	var buf [32]byte
+	b.SetBytes(int64(len(data)))
+	b.ReportAllocs()
+	for b.Loop() {
+		h.Reset()
+		h.Write(data)
+		h.Read(buf[:])
+	}
+}
