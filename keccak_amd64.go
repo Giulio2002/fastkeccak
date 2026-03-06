@@ -3,8 +3,6 @@
 package keccak
 
 import (
-	"unsafe"
-
 	"golang.org/x/crypto/sha3"
 	"golang.org/x/sys/cpu"
 )
@@ -16,10 +14,8 @@ var useBMI2 = cpu.X86.HasBMI2
 //go:noescape
 func keccakF1600(a *[200]byte)
 
-func xorAndPermute(state *[200]byte, buf *byte) {
-	xorIn(state, unsafe.Slice(buf, rate))
-	keccakF1600(state)
-}
+//go:noescape
+func xorAndPermute(state *[200]byte, buf *byte)
 
 // Sum256 computes the Keccak-256 hash of data. Zero heap allocations when BMI2 is available.
 func Sum256(data []byte) [32]byte {
