@@ -6,8 +6,8 @@
 // Uses RORXQ (non-destructive 3-operand rotate) for rho/theta steps
 // and ANDNQ (BMI1, always present with BMI2) for the chi step.
 //
-// func keccakF1600BMI2(a *[200]byte)
-TEXT ·keccakF1600BMI2(SB), $200-8
+// func keccakF1600(a *[200]byte)
+TEXT ·keccakF1600(SB), $200-8
 	MOVQ a+0(FP), DI
 	LEAQ round_consts_bmi2<>(SB), R15
 	MOVQ $24, R14

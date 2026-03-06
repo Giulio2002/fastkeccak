@@ -4,18 +4,10 @@ package keccak
 
 import "testing"
 
-func BenchmarkKeccakF1600Generic(b *testing.B) {
+func BenchmarkKeccakF1600(b *testing.B) {
 	var state [200]byte
 	b.ReportAllocs()
 	for b.Loop() {
-		keccakF1600Generic(&state)
-	}
-}
-
-func BenchmarkKeccakF1600BMI2(b *testing.B) {
-	var state [200]byte
-	b.ReportAllocs()
-	for b.Loop() {
-		keccakF1600BMI2(&state)
+		keccakF1600(&state)
 	}
 }
