@@ -60,6 +60,18 @@ func (s *sponge) Sum256() [32]byte {
 	return [32]byte(state[:32])
 }
 
+// sum256AndReset finalizes the digest and resets the sponge.
+// Avoids the 200-byte state copy of Sum256 by permuting in place.
+func (s *sponge) sum256AndReset() [32]byte {
+	xorIn(&s.state, s.buf[:s.absorbed])
+	s.state[s.absorbed] ^= 0x01
+	s.state[rate-1] ^= 0x80
+	keccakF1600(&s.state)
+	result := [32]byte(s.state[:32])
+	s.Reset()
+	return result
+}
+
 // Sum appends the current Keccak-256 digest to b and returns the resulting slice.
 // Does not modify the sponge state.
 func (s *sponge) Sum(b []byte) []byte {

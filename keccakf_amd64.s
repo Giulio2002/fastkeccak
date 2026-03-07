@@ -2,8 +2,66 @@
 
 //go:build !purego
 
+#include "textflag.h"
+
+// func xorAndPermute(state *[200]byte, buf *byte)
+// XORs rate (136) bytes from buf into state using SSE2, then calls keccakF1600.
+TEXT ·xorAndPermute(SB), NOSPLIT, $8-16
+	MOVQ state+0(FP), DI
+	MOVQ buf+8(FP), SI
+
+	// XOR 128 bytes (8 × 16) using SSE2 unaligned loads
+	MOVOU 0(SI), X0
+	MOVOU 0(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 0(DI)
+
+	MOVOU 16(SI), X0
+	MOVOU 16(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 16(DI)
+
+	MOVOU 32(SI), X0
+	MOVOU 32(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 32(DI)
+
+	MOVOU 48(SI), X0
+	MOVOU 48(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 48(DI)
+
+	MOVOU 64(SI), X0
+	MOVOU 64(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 64(DI)
+
+	MOVOU 80(SI), X0
+	MOVOU 80(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 80(DI)
+
+	MOVOU 96(SI), X0
+	MOVOU 96(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 96(DI)
+
+	MOVOU 112(SI), X0
+	MOVOU 112(DI), X1
+	PXOR  X0, X1
+	MOVOU X1, 112(DI)
+
+	// XOR remaining 8 bytes (128..135)
+	MOVQ 128(SI), AX
+	XORQ AX, 128(DI)
+
+	// Call keccakF1600(state)
+	MOVQ DI, (SP)
+	CALL ·keccakF1600(SB)
+	RET
+
 // func keccakF1600(a *[200]byte)
-TEXT ·keccakF1600(SB), $200-8
+TEXT ·keccakF1600(SB), NOSPLIT, $200-8
 	MOVQ a+0(FP), DI
 
 	// Convert the user state into an internal state

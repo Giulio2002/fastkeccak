@@ -95,6 +95,18 @@ func (h *Hasher) Sum(b []byte) []byte {
 	return h.sponge.Sum(b)
 }
 
+// Sum256Reset finalizes and returns the 32-byte Keccak-256 digest, then resets
+// the hasher. Faster than Sum256 followed by Reset because it avoids copying
+// the internal state.
+func (h *Hasher) Sum256Reset() [32]byte {
+	if !useSHA3 {
+		result := h.Sum256()
+		h.Reset()
+		return result
+	}
+	return h.sponge.sum256AndReset()
+}
+
 // Read squeezes an arbitrary number of bytes from the sponge.
 // On the first call, it pads and permutes, transitioning from absorbing to squeezing.
 // Subsequent calls to Write will panic. It never returns an error.

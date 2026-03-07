@@ -79,6 +79,22 @@ func TestHasherMultiBlock(t *testing.T) {
 	}
 }
 
+func TestSum256Reset(t *testing.T) {
+	var h Hasher
+	for i := 0; i < 10; i++ {
+		data := make([]byte, i*50)
+		for j := range data {
+			data[j] = byte(j + i)
+		}
+		h.Write(data)
+		got := h.Sum256Reset()
+		want := Sum256(data)
+		if got != want {
+			t.Fatalf("Sum256Reset mismatch at iter %d: %x vs %x", i, got, want)
+		}
+	}
+}
+
 func TestReadMatchesSum256(t *testing.T) {
 	// Read of 32 bytes should produce the same result as Sum256.
 	data := []byte("hello")
@@ -316,6 +332,24 @@ func BenchmarkFasterKeccakHasher(b *testing.B) {
 				h.Reset()
 				h.Write(data)
 				h.Sum256()
+			}
+		})
+	}
+}
+
+func BenchmarkFasterKeccakHasherReset(b *testing.B) {
+	for _, size := range benchSizes {
+		data := make([]byte, size)
+		for i := range data {
+			data[i] = byte(i)
+		}
+		b.Run(benchName(size), func(b *testing.B) {
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			var h Hasher
+			for b.Loop() {
+				h.Write(data)
+				h.Sum256Reset()
 			}
 		})
 	}
