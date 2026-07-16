@@ -6,7 +6,7 @@ Go's `crypto/sha3` only exposes SHA-3 (domain `0x06`), not Keccak-256 (domain `0
 `x/crypto/sha3.NewLegacyKeccak256()` provides Keccak-256 but uses a pure-Go permutation on all platforms.
 This package uses assembly-optimized keccak-f[1600] permutations instead:
 
-- **arm64 (Apple Silicon, and any CPU with FEAT_SHA3):** NEON SHA3 extensions (EOR3, RAX1, XAR, BCAX), with the block XOR fused into the permutation
+- **arm64 (Apple Silicon, and any CPU with the Armv8.2-A SHA3 extensions, FEAT_SHA3):** EOR3/RAX1/XAR/BCAX vector instructions, with the block XOR fused into the permutation
 - **amd64 (requires BMI1/BMI2, e.g. Intel Haswell or AMD Excavator and newer):** fully unrolled permutation using RORX/ANDN, with the block XOR fused into the permutation
 - **Fallback (other platforms, older CPUs, or the `purego` build tag):** delegates to `x/crypto/sha3`
 
