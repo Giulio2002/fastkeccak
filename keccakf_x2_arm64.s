@@ -31,6 +31,11 @@ TEXT ·keccakF1600Sha3x2(SB), NOSPLIT, $0-32
 	VLD1	(R0), [V24.D2]
 	SUB	$384, R0, R0
 
+	// Defensive: blocks <= 0 stores the state back unchanged instead of
+	// underflowing the do-while counter (callers always pass blocks >= 1).
+	CMP	$1, R5
+	BLT	store
+
 block_loop:
 	MOVD	$round_consts<>(SB), R1
 	MOVD	$24, R2 // counter for loop
@@ -106,6 +111,7 @@ block_loop:
 	SUB	$1, R5, R5
 	CBNZ	R5, block_loop
 
+store:
 	VST1.P	[V0.D2, V1.D2, V2.D2, V3.D2], 64(R0)
 	VST1.P	[V4.D2, V5.D2, V6.D2, V7.D2], 64(R0)
 	VST1.P	[V8.D2, V9.D2, V10.D2, V11.D2], 64(R0)
