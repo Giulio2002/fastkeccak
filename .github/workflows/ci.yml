@@ -48,15 +48,19 @@ jobs:
   # check (the generator's output is GOARCH-independent).
   checks:
     runs-on: ubuntu-latest
-    env:
-      GOARCH: "386"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: stable
+      # GOARCH is scoped to the vet/test steps so `go generate` below runs
+      # with the runner's native architecture.
       - run: go vet ./...
+        env:
+          GOARCH: "386"
       - run: go test ./...
+        env:
+          GOARCH: "386"
       - name: Regenerate amd64 assembly
         run: go generate ./...
       - name: Check generated assembly matches committed file
