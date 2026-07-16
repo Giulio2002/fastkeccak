@@ -238,78 +238,62 @@ func (h *Hasher) Clone() (*Hasher, error) {
 	return &Hasher{xc: xc}, nil
 }
 
-// MarshalBinary implements encoding.BinaryMarshaler. The encoding is only
-// portable between builds that use the same implementation (native assembly
-// vs x/crypto fallback); a mismatch is reported by UnmarshalBinary.
+// MarshalBinary implements encoding.BinaryMarshaler. The encoding is
+// canonical: the same logical state marshals to the same bytes regardless of
+// platform or active implementation, and can be restored anywhere.
 func (h *Hasher) MarshalBinary() ([]byte, error) {
-	return h.AppendBinary(nil)
+	return h.AppendBinary(make([]byte, 0, marshaledSize))
 }
 
 // AppendBinary implements encoding.BinaryAppender.
 func (h *Hasher) AppendBinary(b []byte) ([]byte, error) {
 	if !useASM {
 		if h.xc == nil {
-			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
+			// A zero-value hasher is the canonical zero state; avoid
+			// allocating (and retaining) a fallback state just to encode it.
+			return appendState(b, new([200]byte), false, 0), nil
 		}
-		return marshalXC(b, h.xc)
+		return xcAppendState(b, h.xc)
 	}
 	s := &h.sponge
-	b = append(b, marshalMagicNative...)
-	b = append(b, s.state[:]...)
-	var flags byte
 	if s.squeezing {
-		flags = 1
+		return appendState(b, &s.state, true, s.readIdx), nil
 	}
-	// Only buf[:absorbed] is live; marshaling the rest would leak stale data.
-	b = append(b, flags, byte(s.absorbed), byte(s.readIdx))
-	b = append(b, s.buf[:s.absorbed]...)
-	return b, nil
+	// Canonical form keeps partial input XORed into the state.
+	state := s.state
+	xorIn(&state, s.buf[:s.absorbed])
+	return appendState(b, &state, false, s.absorbed), nil
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
 func (h *Hasher) UnmarshalBinary(data []byte) error {
-	if len(data) < len(marshalMagicNative) {
-		return errInvalidState
+	state, squeezing, pos, err := parseState(data)
+	if err != nil {
+		return err
 	}
-	switch string(data[:4]) {
-	case marshalMagicNative:
-		if !useASM {
-			return errNativeState
-		}
-		payload := data[4:]
-		if len(payload) < 200+3 {
-			return errInvalidState
-		}
-		flags, absorbed, readIdx := payload[200], int(payload[201]), int(payload[202])
-		if flags > 1 || absorbed >= rate || readIdx >= rate {
-			return errInvalidState
-		}
-		squeezing := flags == 1
-		if squeezing && absorbed != 0 {
-			return errInvalidState
-		}
-		if len(payload) != 200+3+absorbed {
-			return errInvalidState
-		}
-		var s sponge
-		copy(s.state[:], payload[:200])
-		copy(s.buf[:], payload[203:])
-		s.absorbed, s.squeezing, s.readIdx = absorbed, squeezing, readIdx
-		h.sponge = s
-		return nil
-	case marshalMagicXC:
-		if useASM {
-			return errXCState
-		}
-		xc, err := unmarshalXC(data[4:])
+	if !useASM {
+		xc, err := xcFromState(&state, squeezing, pos)
 		if err != nil {
 			return err
 		}
 		h.xc = xc
 		return nil
-	default:
-		return errInvalidState
 	}
+	// Partial input is already XORed into state, so buf stays zero: absorbing
+	// XORs buf into state at finalization, and XORing zeroes is a no-op.
+	h.sponge = sponge{state: state}
+	if squeezing {
+		if pos == rate {
+			// Block-boundary state from the lazy fallback implementation;
+			// the native sponge permutes eagerly.
+			keccakF1600(&h.sponge.state)
+			pos = 0
+		}
+		h.sponge.squeezing, h.sponge.readIdx = true, pos
+	} else {
+		h.sponge.absorbed = pos
+	}
+	return nil
 }
 
 // xorIn XORs data into the first len(data) bytes of state using uint64 loads.

@@ -83,35 +83,33 @@ func (h *Hasher) Clone() (*Hasher, error) {
 	return &Hasher{h: c}, nil
 }
 
-// MarshalBinary implements encoding.BinaryMarshaler. The encoding is only
-// portable between builds that use the same implementation (native assembly
-// vs x/crypto fallback); a mismatch is reported by UnmarshalBinary.
+// MarshalBinary implements encoding.BinaryMarshaler. The encoding is
+// canonical: the same logical state marshals to the same bytes regardless of
+// platform or active implementation, and can be restored anywhere.
 func (h *Hasher) MarshalBinary() ([]byte, error) {
-	return h.AppendBinary(nil)
+	return h.AppendBinary(make([]byte, 0, marshaledSize))
 }
 
 // AppendBinary implements encoding.BinaryAppender.
 func (h *Hasher) AppendBinary(b []byte) ([]byte, error) {
-	h.init()
-	return marshalXC(b, h.h)
+	if h.h == nil {
+		// A zero-value hasher is the canonical zero state; avoid allocating
+		// (and retaining) a backing state just to encode it.
+		return appendState(b, new([200]byte), false, 0), nil
+	}
+	return xcAppendState(b, h.h)
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.
 func (h *Hasher) UnmarshalBinary(data []byte) error {
-	if len(data) < len(marshalMagicXC) {
-		return errInvalidState
+	state, squeezing, pos, err := parseState(data)
+	if err != nil {
+		return err
 	}
-	switch string(data[:4]) {
-	case marshalMagicXC:
-		st, err := unmarshalXC(data[4:])
-		if err != nil {
-			return err
-		}
-		h.h = st
-		return nil
-	case marshalMagicNative:
-		return errNativeState
-	default:
-		return errInvalidState
+	st, err := xcFromState(&state, squeezing, pos)
+	if err != nil {
+		return err
 	}
+	h.h = st
+	return nil
 }

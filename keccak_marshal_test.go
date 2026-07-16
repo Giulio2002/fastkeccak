@@ -2,15 +2,10 @@ package keccak
 
 import (
 	"bytes"
+	"encoding/hex"
+	"slices"
 	"testing"
 )
-
-// concat returns a+b in a fresh slice (no aliasing surprises).
-func concat(a, b []byte) []byte {
-	out := make([]byte, 0, len(a)+len(b))
-	out = append(out, a...)
-	return append(out, b...)
-}
 
 func TestCloneIndependent(t *testing.T) {
 	prefix := make([]byte, 100)
@@ -30,10 +25,10 @@ func TestCloneIndependent(t *testing.T) {
 	h.Write(suffixA)
 	c.Write(suffixB)
 
-	if got, want := h.Sum256(), Sum256(concat(prefix, suffixA)); got != want {
+	if got, want := h.Sum256(), Sum256(slices.Concat(prefix, suffixA)); got != want {
 		t.Fatalf("original after clone: %x, want %x", got, want)
 	}
-	if got, want := c.Sum256(), Sum256(concat(prefix, suffixB)); got != want {
+	if got, want := c.Sum256(), Sum256(slices.Concat(prefix, suffixB)); got != want {
 		t.Fatalf("clone: %x, want %x", got, want)
 	}
 }
@@ -54,7 +49,7 @@ func TestClonePrefixFork(t *testing.T) {
 			t.Fatalf("Clone: %v", err)
 		}
 		c.Write(suffix)
-		if got, want := c.Sum256(), Sum256(concat(prefix, suffix)); got != want {
+		if got, want := c.Sum256(), Sum256(slices.Concat(prefix, suffix)); got != want {
 			t.Fatalf("fork %d: %x, want %x", i, got, want)
 		}
 	}
@@ -171,28 +166,78 @@ func TestAppendBinary(t *testing.T) {
 
 func TestUnmarshalErrors(t *testing.T) {
 	var h Hasher
-	for _, bad := range [][]byte{
-		nil,
-		{},
-		[]byte("fk"),
-		[]byte("nope"),
-		[]byte("fk1?garbage"),
-		[]byte(marshalMagicNative), // truncated payloads
-		[]byte(marshalMagicXC),
-	} {
-		if err := h.UnmarshalBinary(bad); err == nil {
-			t.Fatalf("UnmarshalBinary(%q) = nil, want error", bad)
-		}
-	}
-
-	// A valid encoding must not be accepted after tampering with its length.
 	h.Write([]byte("valid"))
 	enc, err := h.MarshalBinary()
 	if err != nil {
 		t.Fatalf("MarshalBinary: %v", err)
 	}
-	var restored Hasher
-	if err := restored.UnmarshalBinary(enc[:len(enc)-1]); err == nil {
-		t.Fatal("UnmarshalBinary(truncated) = nil, want error")
+
+	flagsOff, posOff := len(marshalMagic)+200, len(marshalMagic)+201
+	mutate := func(off int, v byte) []byte {
+		bad := slices.Clone(enc)
+		bad[off] = v
+		return bad
+	}
+	for name, bad := range map[string][]byte{
+		"nil":                         nil,
+		"empty":                       {},
+		"short":                       []byte("fk"),
+		"bad magic":                   slices.Concat([]byte("nope"), enc[4:]),
+		"magic only":                  []byte(marshalMagic),
+		"truncated":                   enc[:len(enc)-1],
+		"trailing":                    append(slices.Clone(enc), 0),
+		"bad flags":                   mutate(flagsOff, 2),
+		"pos == rate while absorbing": mutate(posOff, rate),
+		"pos > rate":                  mutate(posOff, 255),
+	} {
+		var restored Hasher
+		if err := restored.UnmarshalBinary(bad); err == nil {
+			t.Fatalf("UnmarshalBinary(%s) = nil, want error", name)
+		}
+	}
+}
+
+// TestMarshalCanonicalBytes pins the wire format: the same logical state must
+// marshal to the same bytes on every platform and implementation (the CI
+// matrix runs this on native asm builds and the purego fallback). If this
+// test needs updating, the format changed — bump the magic version.
+func TestMarshalCanonicalBytes(t *testing.T) {
+	sum := func(b []byte) string {
+		d := Sum256(b)
+		return hex.EncodeToString(d[:])
+	}
+
+	var h Hasher
+	enc, err := h.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary: %v", err)
+	}
+	if got, want := hex.EncodeToString(enc[:8]), "666b310100000000"; got != want {
+		t.Fatalf("zero-state prefix = %s, want %s", got, want)
+	}
+	if len(enc) != marshaledSize {
+		t.Fatalf("len = %d, want %d", len(enc), marshaledSize)
+	}
+	// Digest of the full encoding is a compact cross-platform fingerprint.
+	if got, want := sum(enc), "7fe3c540ad846c71039a3ea6100496db5662e71e07178342bc638b301e523b1e"; got != want {
+		t.Fatalf("zero-state encoding fingerprint = %s, want %s", got, want)
+	}
+
+	h.Write([]byte("canonical wire format"))
+	enc, err = h.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary: %v", err)
+	}
+	if got, want := sum(enc), "447df4c4591c5cdca00f3b7248d5d3981d631067ca533f166ec5f01a0c019d00"; got != want {
+		t.Fatalf("absorbing encoding fingerprint = %s, want %s", got, want)
+	}
+
+	h.Read(make([]byte, 50))
+	enc, err = h.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary: %v", err)
+	}
+	if got, want := sum(enc), "e0ae1516f534144ab2658af9050963ee3a65c4780d5bff5a31c58de5aa9a2fae"; got != want {
+		t.Fatalf("squeezing encoding fingerprint = %s, want %s", got, want)
 	}
 }
