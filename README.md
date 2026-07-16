@@ -29,7 +29,7 @@ digest2 := h.Sum256()
 
 ### fastkeccak vs x/crypto/sha3
 
-| Size | fastkeccak | x/crypto | Speedup |
+| Size | fastkeccak | x/crypto/sha3 | Speedup |
 |------|--------------|----------|---------|
 | 32 B | 116.4 ns/op (275 MB/s) | 244.8 ns/op (131 MB/s) | **2.1x** |
 | 128 B | 121.8 ns/op (1051 MB/s) | 244.1 ns/op (524 MB/s) | **2.0x** |
