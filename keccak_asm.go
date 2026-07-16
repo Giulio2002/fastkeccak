@@ -251,7 +251,8 @@ func (h *Hasher) AppendBinary(b []byte) ([]byte, error) {
 		if h.xc == nil {
 			// A zero-value hasher is the canonical zero state; avoid
 			// allocating (and retaining) a fallback state just to encode it.
-			return appendState(b, new([200]byte), false, 0), nil
+			var zero [200]byte
+			return appendState(b, &zero, false, 0), nil
 		}
 		return xcAppendState(b, h.xc)
 	}
