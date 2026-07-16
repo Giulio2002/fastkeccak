@@ -122,7 +122,10 @@ func xcFromState(state *[200]byte, squeezing bool, pos int) (KeccakState, error)
 	}
 	blob = append(blob, byte(pos), dir)
 
-	st := sha3.NewLegacyKeccak256().(KeccakState)
+	st, ok := sha3.NewLegacyKeccak256().(KeccakState)
+	if !ok {
+		return nil, errXCFormat
+	}
 	u, ok := st.(encoding.BinaryUnmarshaler)
 	if !ok {
 		return nil, errXCFormat
@@ -143,7 +146,10 @@ func cloneXC(xc KeccakState) (KeccakState, error) {
 	if err != nil {
 		return nil, err
 	}
-	st := sha3.NewLegacyKeccak256().(KeccakState)
+	st, ok := sha3.NewLegacyKeccak256().(KeccakState)
+	if !ok {
+		return nil, errXCFormat
+	}
 	u, ok := st.(encoding.BinaryUnmarshaler)
 	if !ok {
 		return nil, errXCFormat
