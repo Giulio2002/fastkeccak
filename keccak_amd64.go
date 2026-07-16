@@ -1,6 +1,7 @@
 //go:build amd64 && !purego
 
 //go:generate go run gen_keccakf_x4_avx2.go
+//go:generate go run gen_keccakf_x8_avx512.go
 
 package keccak
 
@@ -12,8 +13,12 @@ import (
 
 func init() {
 	useASM = cpu.X86.HasBMI1 && cpu.X86.HasBMI2
-	// The batch kernel needs AVX2; its tail handling reuses the BMI2 kernel.
-	if useASM && cpu.X86.HasAVX2 {
+	// Batch kernels need AVX2/AVX-512; their tail handling reuses the BMI2
+	// kernel. Widest available wins.
+	switch {
+	case useASM && cpu.X86.HasAVX512F:
+		batchKernel = sum256OctBatch
+	case useASM && cpu.X86.HasAVX2:
 		batchKernel = sum256QuadBatch
 	}
 }
@@ -39,6 +44,103 @@ func xorAndPermute(state *[200]byte, buf *byte) {
 //
 //go:noescape
 func keccakF1600AVX2x4(st *[100]uint64, b0, b1, b2, b3 *byte, blocks int)
+
+// keccakF1600AVX512x8 absorbs and permutes `blocks` consecutive rate-sized
+// blocks of eight independent messages into eight interleaved states (lane i
+// of message j in st[8i+j] — one message per 64-bit lane of a 512-bit
+// register row). Buffer pointers advance internally.
+//
+//go:noescape
+func keccakF1600AVX512x8(st *[200]uint64, bufs *[8]*byte, blocks int)
+
+// sum256OctBatch hashes groups of eight inputs with the 8-way AVX-512
+// kernel, draining a remainder of four or more through the AVX2 quad path
+// (AVX-512F implies AVX2). Returns how many inputs it consumed.
+func sum256OctBatch(dst [][32]byte, inputs [][]byte) int {
+	i := 0
+	for ; i+7 < len(inputs); i += 8 {
+		sum256Oct(dst[i:i+8:i+8], inputs[i:i+8:i+8])
+	}
+	for ; i+3 < len(inputs); i += 4 {
+		dst[i], dst[i+1], dst[i+2], dst[i+3] =
+			sum256Quad(inputs[i], inputs[i+1], inputs[i+2], inputs[i+3])
+	}
+	return i
+}
+
+// sum256Oct computes the Keccak-256 digests of exactly eight independent
+// inputs, sharing the permutation while all eight still have full blocks
+// left. len(dst) and len(in) must be 8.
+func sum256Oct(dst [][32]byte, in [][]byte) {
+	// Local copies: the tails advance below and the caller's slice must not
+	// be mutated.
+	var msgs [8][]byte
+	copy(msgs[:], in)
+
+	nFull := 0
+	minLen := len(msgs[0])
+	for _, m := range msgs {
+		if len(m) >= rate {
+			nFull++
+		}
+		minLen = min(minLen, len(m))
+	}
+	if nFull != 0 && nFull != 8 {
+		// Mixed: little or no shared work — plain hashing avoids the
+		// eight-state setup.
+		for j, m := range msgs {
+			dst[j] = Sum256(m)
+		}
+		return
+	}
+
+	var st [200]uint64
+	if blocks := minLen / rate; blocks > 0 {
+		var bufs [8]*byte
+		for j := range bufs {
+			bufs[j] = &msgs[j][0]
+		}
+		keccakF1600AVX512x8(&st, &bufs, blocks)
+		for j := range msgs {
+			msgs[j] = msgs[j][blocks*rate:]
+		}
+	}
+
+	allShort := true
+	for _, m := range msgs {
+		if len(m) >= rate {
+			allShort = false
+			break
+		}
+	}
+	if allShort {
+		// All tails fit in one padded block each: fuse the final
+		// permutation too (eight messages, one permutation).
+		var tails [8][rate]byte
+		var bufs [8]*byte
+		for j := range msgs {
+			padBlock(&tails[j], msgs[j])
+			bufs[j] = &tails[j][0]
+		}
+		keccakF1600AVX512x8(&st, &bufs, 1)
+		for j := range dst[:8] {
+			for i := 0; i < 4; i++ {
+				binary.LittleEndian.PutUint64(dst[j][i*8:], st[8*i+j])
+			}
+		}
+		return
+	}
+
+	// Tail lengths straddle a block boundary: de-interleave and finish each
+	// message individually.
+	for j := range msgs {
+		var s [200]byte
+		for i := 0; i < 25; i++ {
+			binary.LittleEndian.PutUint64(s[i*8:], st[8*i+j])
+		}
+		dst[j] = finishTail(&s, msgs[j])
+	}
+}
 
 // sum256QuadBatch hashes groups of four inputs with the 4-way AVX2 kernel,
 // returning how many inputs it consumed (the largest multiple-of-4 prefix).
