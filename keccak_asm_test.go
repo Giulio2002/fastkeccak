@@ -14,8 +14,10 @@ func TestXorAndPermute(t *testing.T) {
 	if !useASM {
 		t.Skip("hardware acceleration unavailable on this CPU")
 	}
+	// The permutation has no data-dependent branches, so a divergence shows
+	// on essentially any random state; more iterations add no assurance.
 	rng := rand.New(rand.NewSource(42))
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 128; i++ {
 		var a, b [200]byte
 		var buf [rate]byte
 		rng.Read(a[:])

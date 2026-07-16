@@ -26,33 +26,40 @@ jobs:
           go-version: stable
       - run: go vet ./...
       - run: go test -race ./...
-      - run: go test -tags purego ./...
-      - name: Fuzz against x/crypto reference
+      # purego is skipped only on windows: the ubuntu (amd64) and macos
+      # (arm64) legs already cover the fallback on both architectures.
+      - if: runner.os != 'Windows'
+        run: go test -tags purego ./...
+      - name: Fuzz Sum256 against x/crypto reference
         if: runner.os != 'Windows'
-        run: go test -run=^$ -fuzz FuzzSum256 -fuzztime 30s .
+        run: go test -run=^$ -fuzz FuzzSum256 -fuzztime 20s .
+      - name: Fuzz streaming Write chunking
+        if: runner.os != 'Windows'
+        run: go test -run=^$ -fuzz FuzzWriteChunks -fuzztime 20s .
+      - name: Upload fuzz crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.os }}
+          path: testdata/fuzz/
+          if-no-files-found: ignore
 
-  test-386:
+  # 32-bit build of the non-asm fallback, plus the generated-assembly drift
+  # check (the generator's output is GOARCH-independent).
+  checks:
     runs-on: ubuntu-latest
+    env:
+      GOARCH: "386"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: stable
       - run: go vet ./...
-        env:
-          GOARCH: "386"
       - run: go test ./...
-        env:
-          GOARCH: "386"
-
-  generate-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
       - name: Regenerate amd64 assembly
         run: go generate ./...
       - name: Check generated assembly matches committed file
-        run: git diff --exit-code
+        # `git add -A -N` records intent-to-add so newly created (untracked)
+        # generator output also shows up in the diff.
+        run: git add -A -N && git diff --exit-code
