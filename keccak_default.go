@@ -16,6 +16,18 @@ func Sum256(data []byte) [32]byte {
 	return out
 }
 
+// Sum256Batch computes the Keccak-256 digest of each input into the
+// corresponding element of dst. It panics if dst is shorter than inputs.
+// On this platform it is equivalent to calling Sum256 in a loop.
+func Sum256Batch(dst [][32]byte, inputs [][]byte) {
+	if len(dst) < len(inputs) {
+		panic("keccak: Sum256Batch dst shorter than inputs")
+	}
+	for i, in := range inputs {
+		dst[i] = Sum256(in)
+	}
+}
+
 // Hasher is a streaming Keccak-256 hasher wrapping x/crypto/sha3.
 type Hasher struct {
 	h KeccakState
