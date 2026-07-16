@@ -14,8 +14,10 @@ import (
 //
 // iOS is deliberately excluded: x/sys/cpu performs no feature detection on
 // Darwin-family systems, and A12 and older chips (iPhone XS/XR, iPad 8, ...)
-// lack FEAT_SHA3 — it first shipped in the A13. The Go standard library gates
-// its equivalent assumption with `darwin && !ios` for the same reason.
+// lack FEAT_SHA3 — it first shipped in the A13. The Go standard library
+// likewise leaves iOS without CPU feature detection (its darwin sysctl
+// probing in internal/cpu is build-tagged `darwin && !ios`), so its SHA3
+// assembly never runs on iOS either.
 func init() {
 	useASM = runtime.GOOS == "darwin" || cpu.ARM64.HasSHA3
 }
