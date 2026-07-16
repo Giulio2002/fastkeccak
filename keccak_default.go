@@ -69,3 +69,49 @@ func (h *Hasher) Read(out []byte) (int, error) {
 	h.init()
 	return h.h.Read(out)
 }
+
+// Clone returns a copy of the hasher in its current state. The copy and the
+// original evolve independently.
+func (h *Hasher) Clone() (*Hasher, error) {
+	if h.h == nil {
+		return &Hasher{}, nil
+	}
+	c, err := cloneXC(h.h)
+	if err != nil {
+		return nil, err
+	}
+	return &Hasher{h: c}, nil
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler. The encoding is only
+// portable between builds that use the same implementation (native assembly
+// vs x/crypto fallback); a mismatch is reported by UnmarshalBinary.
+func (h *Hasher) MarshalBinary() ([]byte, error) {
+	return h.AppendBinary(nil)
+}
+
+// AppendBinary implements encoding.BinaryAppender.
+func (h *Hasher) AppendBinary(b []byte) ([]byte, error) {
+	h.init()
+	return marshalXC(b, h.h)
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler.
+func (h *Hasher) UnmarshalBinary(data []byte) error {
+	if len(data) < len(marshalMagicXC) {
+		return errInvalidState
+	}
+	switch string(data[:4]) {
+	case marshalMagicXC:
+		st, err := unmarshalXC(data[4:])
+		if err != nil {
+			return err
+		}
+		h.h = st
+		return nil
+	case marshalMagicNative:
+		return errNativeState
+	default:
+		return errInvalidState
+	}
+}

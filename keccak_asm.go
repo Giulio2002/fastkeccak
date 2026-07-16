@@ -111,6 +111,7 @@ func (s *sponge) padAndSqueeze() {
 	s.state[s.absorbed] ^= 0x01
 	s.state[rate-1] ^= 0x80
 	keccakF1600(&s.state)
+	s.absorbed = 0
 	s.squeezing = true
 	s.readIdx = 0
 }
@@ -219,6 +220,96 @@ func (h *Hasher) Read(out []byte) (int, error) {
 		return h.xc.Read(out)
 	}
 	return h.sponge.Read(out)
+}
+
+// Clone returns a copy of the hasher in its current state. The copy and the
+// original evolve independently.
+func (h *Hasher) Clone() (*Hasher, error) {
+	if useASM {
+		return &Hasher{sponge: h.sponge}, nil
+	}
+	if h.xc == nil {
+		return &Hasher{}, nil
+	}
+	xc, err := cloneXC(h.xc)
+	if err != nil {
+		return nil, err
+	}
+	return &Hasher{xc: xc}, nil
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler. The encoding is only
+// portable between builds that use the same implementation (native assembly
+// vs x/crypto fallback); a mismatch is reported by UnmarshalBinary.
+func (h *Hasher) MarshalBinary() ([]byte, error) {
+	return h.AppendBinary(nil)
+}
+
+// AppendBinary implements encoding.BinaryAppender.
+func (h *Hasher) AppendBinary(b []byte) ([]byte, error) {
+	if !useASM {
+		if h.xc == nil {
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
+		}
+		return marshalXC(b, h.xc)
+	}
+	s := &h.sponge
+	b = append(b, marshalMagicNative...)
+	b = append(b, s.state[:]...)
+	var flags byte
+	if s.squeezing {
+		flags = 1
+	}
+	// Only buf[:absorbed] is live; marshaling the rest would leak stale data.
+	b = append(b, flags, byte(s.absorbed), byte(s.readIdx))
+	b = append(b, s.buf[:s.absorbed]...)
+	return b, nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler.
+func (h *Hasher) UnmarshalBinary(data []byte) error {
+	if len(data) < len(marshalMagicNative) {
+		return errInvalidState
+	}
+	switch string(data[:4]) {
+	case marshalMagicNative:
+		if !useASM {
+			return errNativeState
+		}
+		payload := data[4:]
+		if len(payload) < 200+3 {
+			return errInvalidState
+		}
+		flags, absorbed, readIdx := payload[200], int(payload[201]), int(payload[202])
+		if flags > 1 || absorbed >= rate || readIdx >= rate {
+			return errInvalidState
+		}
+		squeezing := flags == 1
+		if squeezing && absorbed != 0 {
+			return errInvalidState
+		}
+		if len(payload) != 200+3+absorbed {
+			return errInvalidState
+		}
+		var s sponge
+		copy(s.state[:], payload[:200])
+		copy(s.buf[:], payload[203:])
+		s.absorbed, s.squeezing, s.readIdx = absorbed, squeezing, readIdx
+		h.sponge = s
+		return nil
+	case marshalMagicXC:
+		if useASM {
+			return errXCState
+		}
+		xc, err := unmarshalXC(data[4:])
+		if err != nil {
+			return err
+		}
+		h.xc = xc
+		return nil
+	default:
+		return errInvalidState
+	}
 }
 
 // xorIn XORs data into the first len(data) bytes of state using uint64 loads.
