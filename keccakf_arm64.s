@@ -9,7 +9,7 @@
 // func keccakF1600Sha3(a *[200]byte, buf *byte)
 // When buf != nil, XORs rate bytes into state before permuting.
 // When buf == nil, just permutes.
-TEXT ·keccakF1600Sha3(SB), $200-16
+TEXT ·keccakF1600Sha3(SB), NOSPLIT, $0-16
 	MOVD	a+0(FP), R0
 	MOVD	buf+8(FP), R3
 	MOVD	$round_consts<>(SB), R1
