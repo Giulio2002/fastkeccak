@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # ubuntu-latest covers the amd64 BMI2 assembly on real hardware,
+  # macos covers the arm64 SHA3-extension assembly. Neither path can be
+  # exercised from the other architecture: Rosetta 2 does not report BMI2,
+  # so `go test` under emulation silently tests the fallback.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go test -tags purego ./...
+      - name: Fuzz against x/crypto reference
+        if: runner.os != 'Windows'
+        run: go test -run=^$ -fuzz FuzzSum256 -fuzztime 30s .
+
+  test-386:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go vet ./...
+        env:
+          GOARCH: "386"
+      - run: go test ./...
+        env:
+          GOARCH: "386"
+
+  generate-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Regenerate amd64 assembly
+        run: go generate ./...
+      - name: Check generated assembly matches committed file
+        run: git diff --exit-code
