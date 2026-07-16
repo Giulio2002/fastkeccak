@@ -18,3 +18,29 @@ var _ KeccakState = (*Hasher)(nil)
 func NewFastKeccak() *Hasher {
 	return &Hasher{}
 }
+
+// batchKernel, when non-nil, hashes some prefix of inputs into dst and
+// returns how many inputs it consumed. Platform init registers it when a
+// multi-message SIMD kernel is available; the hook is width-agnostic so a
+// kernel of any lane count fits without touching Sum256Batch.
+var batchKernel func(dst [][32]byte, inputs [][]byte) int
+
+// Sum256Batch computes the Keccak-256 digest of each input into the
+// corresponding element of dst. It panics if dst is shorter than inputs.
+//
+// Where a multi-message SIMD kernel is available (arm64 with SHA3
+// extensions), independent inputs are hashed in lockstep, roughly doubling
+// throughput; similar-length inputs batch fastest. Elsewhere it is
+// equivalent to calling Sum256 in a loop.
+func Sum256Batch(dst [][32]byte, inputs [][]byte) {
+	if len(dst) < len(inputs) {
+		panic("keccak: Sum256Batch dst shorter than inputs")
+	}
+	i := 0
+	if batchKernel != nil {
+		i = batchKernel(dst, inputs)
+	}
+	for ; i < len(inputs); i++ {
+		dst[i] = Sum256(inputs[i])
+	}
+}

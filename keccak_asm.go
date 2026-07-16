@@ -121,6 +121,14 @@ func sum256Sponge(data []byte) [32]byte {
 	return finishTail(&state, data)
 }
 
+// padBlock writes tail into dst — which must be zeroed — and applies Keccak
+// multi-rate padding (0x01 domain byte, 0x80 final bit).
+func padBlock(dst *[rate]byte, tail []byte) {
+	copy(dst[:], tail)
+	dst[len(tail)] = 0x01
+	dst[rate-1] |= 0x80
+}
+
 // finishTail absorbs the remaining data (any length) into state, pads, and
 // returns the digest. state is clobbered.
 func finishTail(state *[200]byte, data []byte) [32]byte {
@@ -129,34 +137,11 @@ func finishTail(state *[200]byte, data []byte) [32]byte {
 		data = data[rate:]
 	}
 
-	xorIn(state, data)
-	state[len(data)] ^= 0x01
-	state[rate-1] ^= 0x80
-	keccakF1600(state)
+	var block [rate]byte
+	padBlock(&block, data)
+	xorAndPermute(state, &block[0])
 
 	return [32]byte(state[:32])
-}
-
-// Sum256Batch computes the Keccak-256 digest of each input into the
-// corresponding element of dst. It panics if dst is shorter than inputs.
-//
-// On arm64 with SHA3 extensions, adjacent input pairs are hashed in lockstep
-// by a two-message SIMD kernel, roughly doubling throughput while both
-// messages still have full blocks left; inputs of similar length pair best.
-// Elsewhere it is equivalent to calling Sum256 in a loop.
-func Sum256Batch(dst [][32]byte, inputs [][]byte) {
-	if len(dst) < len(inputs) {
-		panic("keccak: Sum256Batch dst shorter than inputs")
-	}
-	i := 0
-	if useASM && haveSum256Pair {
-		for ; i+1 < len(inputs); i += 2 {
-			dst[i], dst[i+1] = sum256Pair(inputs[i], inputs[i+1])
-		}
-	}
-	for ; i < len(inputs); i++ {
-		dst[i] = Sum256(inputs[i])
-	}
 }
 
 // Sum256 computes the Keccak-256 hash of data. Zero heap allocations when hardware
