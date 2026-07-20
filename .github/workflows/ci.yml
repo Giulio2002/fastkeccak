@@ -25,8 +25,8 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       # Makes "which implementation did this job actually test?" answerable
@@ -55,7 +55,7 @@ jobs:
         run: go test -run=^$ -fuzz FuzzWriteChunks -fuzztime 20s .
       - name: Upload fuzz crash reproducers
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-corpus-${{ matrix.os }}
           path: testdata/fuzz/
@@ -66,8 +66,8 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       # GOARCH is scoped to the vet/test steps so `go generate` below runs
@@ -78,10 +78,30 @@ jobs:
       - run: go test ./...
         env:
           GOARCH: "386"
+      # Regenerate the amd64 assembly and fail if it differs from what is
+      # committed.
+      #
+      # This is NOT a correctness check — the tests and the fuzzing against
+      # x/crypto cover that. It answers a different question: which file is
+      # the source of truth. keccakf_amd64_bmi2.s is 4.6k lines emitted by a
+      # 175-line generator; nobody can meaningfully review the assembly, but
+      # anyone can review the generator. Pinning ".s == generator output" is
+      # what makes reviewing the generator a valid substitute, and it
+      # enforces the `DO NOT EDIT` header the generated file already carries.
+      #
+      # The failure it prevents: someone optimizes the .s directly (it is the
+      # file that compiles, and where the profiler points), tests pass, it
+      # ships — and months later an unrelated `go generate` silently reverts
+      # it, leaving a perf regression with no suspect in the diff. The mirror
+      # case, editing the generator without re-running it, leaves the
+      # generator a lie about what actually compiles.
+      #
+      # Scope note: amd64 only. keccakf_arm64.s is hand-written (copied from
+      # Go's crypto/internal/fips140/sha3), so nothing regenerates it.
       - name: Regenerate amd64 assembly
         run: go generate ./...
       - name: Check generated assembly matches committed file
-        # Scoped to *.s: intent-to-add makes newly created generator output
-        # visible to the diff, while unrelated untracked files (editor state,
-        # stray build output) cannot turn this into a false failure.
+        # Scoped to *.s so unrelated untracked files (editor state, stray
+        # build output) cannot fail this step under a name that blames the
+        # generator; intent-to-add keeps newly created output visible.
         run: git add -A -N -- '*.s' && git diff --exit-code -- '*.s'
