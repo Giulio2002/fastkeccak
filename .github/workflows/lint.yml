@@ -87,6 +87,23 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1
           fi
+      # asmfmt is gofmt for Go assembly — the only formatter that exists for
+      # it. Both .s files are kept asmfmt-clean, including the generated one:
+      # `go generate` pipes the generator's output through asmfmt (see the
+      # directives in keccak.go), so this check and the generated-assembly
+      # drift check in ci.yml cannot contradict each other.
+      #
+      # Note for auditing keccakf_arm64.s against its upstream original in
+      # Go's crypto/internal/fips140/sha3: compare with `diff -w`, since
+      # asmfmt changes only whitespace.
+      - name: asmfmt
+        run: |
+          unformatted="$(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::asmfmt needed on:"; echo "$unformatted"
+            go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d .
+            exit 1
+          fi
       - name: go.mod tidy
         run: go mod tidy -diff
       - name: govulncheck
