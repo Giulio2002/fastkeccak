@@ -1,0 +1,94 @@
+name: Lint
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # golangci-lint is installed by the action — deliberately NOT a go.mod
+  # dependency, so the library keeps a two-dependency module graph.
+  #
+  # The matrix exists because this package is heavily build-tagged: a single
+  # run type-checks only the files selected by one GOARCH/tag combination and
+  # leaves the rest of the package unlinted.
+  golangci:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goarch: amd64, tags: "" }
+          - { goarch: arm64, tags: "" }
+          - { goarch: "386", tags: "" }
+          - { goarch: amd64, tags: purego }
+    name: golangci-lint (${{ matrix.goarch }}${{ matrix.tags && format(' {0}', matrix.tags) || '' }})
+    runs-on: ubuntu-latest
+    env:
+      GOOS: linux
+      GOARCH: ${{ matrix.goarch }}
+      # cgo cannot cross-compile without a C toolchain, which makes package
+      # loading fail for non-native GOARCH.
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          args: --build-tags=${{ matrix.tags }}
+
+  # go vet is a SEPARATE, non-negotiable step: its asmdecl analyzer is the
+  # only checker that validates assembly against the Go declarations (TEXT
+  # frame/argument sizes, FP offsets, operand widths). golangci-lint's govet
+  # does not see .s files, so it cannot substitute for this — verified by
+  # introducing a deliberate `$200-8` frame bug, which `go vet` reports and
+  # golangci-lint does not.
+  #
+  # Cross-compiling vet checks each architecture's assembly from one runner,
+  # so the amd64 BMI2 kernel is validated even though this job runs wherever.
+  vet-asm:
+    name: go vet (asmdecl, all arches)
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: vet every build variant
+        run: |
+          set -euxo pipefail
+          for arch in amd64 arm64 386 riscv64; do
+            GOOS=linux GOARCH="$arch" go vet ./...
+          done
+          GOOS=windows GOARCH=amd64 go vet ./...
+          GOOS=linux GOARCH=amd64 go vet -tags purego ./...
+
+  checks:
+    name: gofmt / tidy / vulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # gofmt covers every .go file including the //go:build ignore
+      # generators, which golangci-lint cannot load (they are package main in
+      # a package keccak directory).
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+      - name: go.mod tidy
+        run: go mod tidy -diff
+      - name: govulncheck
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
