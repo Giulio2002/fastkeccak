@@ -21,6 +21,18 @@ func forceFallback(t *testing.T) {
 	t.Cleanup(func() { useASM = old })
 }
 
+// asFallback runs fn with the package routed through the x/crypto fallback,
+// restoring whichever implementation was selected before. Unlike
+// forceFallback it is scoped to a single call rather than a whole test, so
+// one test can cross between implementations. t.Fatalf inside fn still runs
+// the restore, since Goexit unwinds defers.
+func asFallback(fn func()) {
+	old := useASM
+	useASM = false
+	defer func() { useASM = old }()
+	fn()
+}
+
 var fallbackLens = []int{0, 1, 32, 135, 136, 137, 271, 272, 300}
 
 func fallbackData(n int) []byte {
@@ -178,9 +190,7 @@ func TestCrossImplementationMarshal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("native MarshalBinary: %v", err)
 	}
-	func() {
-		useASM = false
-		defer func() { useASM = true }()
+	asFallback(func() {
 		var f Hasher
 		if err := f.UnmarshalBinary(encNative); err != nil {
 			t.Fatalf("fallback UnmarshalBinary(native enc): %v", err)
@@ -189,13 +199,11 @@ func TestCrossImplementationMarshal(t *testing.T) {
 		if got := f.Sum256(); got != whole {
 			t.Fatalf("native->fallback: %x, want %x", got, whole)
 		}
-	}()
+	})
 
 	// Fallback → native.
 	var encFallback []byte
-	func() {
-		useASM = false
-		defer func() { useASM = true }()
+	asFallback(func() {
 		var f Hasher
 		f.Write(data)
 		var err error
@@ -203,7 +211,7 @@ func TestCrossImplementationMarshal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("fallback MarshalBinary: %v", err)
 		}
-	}()
+	})
 	var n2 Hasher
 	if err := n2.UnmarshalBinary(encFallback); err != nil {
 		t.Fatalf("native UnmarshalBinary(fallback enc): %v", err)
