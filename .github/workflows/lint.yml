@@ -96,12 +96,17 @@ jobs:
       # Note for auditing keccakf_arm64.s against its upstream original in
       # Go's crypto/internal/fips140/sha3: compare with `diff -w`, since
       # asmfmt changes only whitespace.
+      # A single -d run: it prints nothing when every .s file is already
+      # formatted, and the diff itself when one is not — so this both
+      # detects and explains the failure without invoking asmfmt twice.
+      # Keep the pinned version in step with the go:generate directive in
+      # keccak.go.
       - name: asmfmt
         run: |
-          unformatted="$(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -l .)"
-          if [ -n "$unformatted" ]; then
-            echo "::error::asmfmt needed on:"; echo "$unformatted"
-            go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d .
+          diff="$(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d .)"
+          if [ -n "$diff" ]; then
+            echo "::error::asmfmt needed; run 'go generate ./...'"
+            echo "$diff"
             exit 1
           fi
       - name: go.mod tidy
