@@ -81,6 +81,7 @@ jobs:
       - name: Regenerate amd64 assembly
         run: go generate ./...
       - name: Check generated assembly matches committed file
-        # `git add -A -N` records intent-to-add so newly created (untracked)
-        # generator output also shows up in the diff.
-        run: git add -A -N && git diff --exit-code
+        # Scoped to *.s: intent-to-add makes newly created generator output
+        # visible to the diff, while unrelated untracked files (editor state,
+        # stray build output) cannot turn this into a false failure.
+        run: git add -A -N -- '*.s' && git diff --exit-code -- '*.s'
