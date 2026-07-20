@@ -103,9 +103,14 @@ jobs:
       # keccak.go.
       - name: asmfmt
         run: |
-          diff="$(go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -d .)"
+          # One version string, one invocation: -d prints nothing when the
+          # .s files are clean and the diff when they are not. The suggested
+          # fix is asmfmt itself rather than `go generate`, which would only
+          # reach the generated amd64 file and not hand-written assembly.
+          asmfmt="github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2"
+          diff="$(go run "$asmfmt" -d .)"
           if [ -n "$diff" ]; then
-            echo "::error::asmfmt needed; run 'go generate ./...'"
+            echo "::error::assembly is not asmfmt-clean; fix with: go run $asmfmt -w ."
             echo "$diff"
             exit 1
           fi
