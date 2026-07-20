@@ -1,0 +1,72 @@
+version: "2"
+
+run:
+  # Lint every build variant: files are heavily build-tagged (amd64/arm64/
+  # purego), so a single-platform run leaves most of the package unchecked.
+  # CI runs this config once per GOOS/GOARCH/tag combination.
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    # --- assembly / compiler-directive correctness (the reason this repo
+    # --- needs linting more than a typical Go library)
+    - gocheckcompilerdirectives # typo'd //go: directives are silently ignored
+    - nolintlint # nolint directives must be specific and explained
+
+    # --- supply-chain / source integrity (crypto code)
+    - bidichk # Trojan Source: bidi control chars in source
+    - asciicheck # non-ASCII identifiers (homoglyph attacks)
+
+    # --- correctness
+    - errorlint # error wrapping/comparison mistakes
+    - makezero # make([]T, n) then append — a classic silent-corruption bug
+    - predeclared # shadowing builtins (min, max, len, cap, ...)
+    - recvcheck # mixed pointer/value receivers on the same type
+    - unconvert # unnecessary conversions often mask a type mistake
+
+    # --- hygiene
+    - misspell
+    - revive
+
+  settings:
+    govet:
+      # asmdecl is the single most valuable check in this repo: it verifies
+      # every TEXT directive's frame/argument sizes and FP offsets against the
+      # Go func declaration. framepointer and stdmethods matter here too.
+      enable-all: true
+      disable:
+        - fieldalignment # struct padding advice; not a correctness issue
+        - shadow # noisy on idiomatic err/ok shadowing
+
+    revive:
+      rules:
+        - name: exported # a public library should document exported symbols
+          arguments:
+            - disableStutteringCheck # KeccakState in package keccak is fine
+        - name: var-naming
+        - name: indent-error-flow
+        - name: errorf
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    staticcheck:
+      checks:
+        - all
+
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # hash.Hash.Write never returns an error (documented contract), and the
+      # sponge's Read is defined to return nil — checking them in tests adds
+      # noise without catching anything.
+      - path: (.+)_test\.go
+        linters: [errcheck]
+      # Assembly stubs have no Go body to document beyond their doc comment.
+      - source: "^//go:noescape$"
+        linters: [revive]
+
+formatters:
+  enable:
+    - gofmt
