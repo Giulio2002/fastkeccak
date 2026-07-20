@@ -282,18 +282,19 @@ func (h *Hasher) UnmarshalBinary(data []byte) error {
 	}
 	// Partial input is already XORed into state, so buf stays zero: absorbing
 	// XORs buf into state at finalization, and XORing zeroes is a no-op.
-	h.sponge = sponge{state: state}
+	s := sponge{state: state}
 	if squeezing {
 		if pos == rate {
 			// Block-boundary state from the lazy fallback implementation;
 			// the native sponge permutes eagerly.
-			keccakF1600(&h.sponge.state)
+			keccakF1600(&s.state)
 			pos = 0
 		}
-		h.sponge.squeezing, h.sponge.readIdx = true, pos
+		s.squeezing, s.readIdx = true, pos
 	} else {
-		h.sponge.absorbed = pos
+		s.absorbed = pos
 	}
+	h.sponge = s
 	return nil
 }
 
