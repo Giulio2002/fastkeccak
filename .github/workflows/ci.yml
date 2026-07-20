@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Every runner here exercises a different implementation on real silicon:
+  #   ubuntu-latest    amd64  -> BMI2 assembly
+  #   macos-15         arm64  -> SHA3-extension assembly (Apple Silicon)
+  #   ubuntu-24.04-arm arm64  -> the cpu.ARM64.HasSHA3 *runtime detection*
+  #                             path, which macOS never reaches because it
+  #                             short-circuits on runtime.GOOS == "darwin"
+  #   windows-latest   amd64  -> GOOS coverage
+  # None of these can be substituted by emulation: Rosetta 2 does not report
+  # BMI2, so `go test` under it silently tests the fallback instead.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # Makes "which implementation did this job actually test?" answerable
+      # from the log, instead of assumed.
+      - name: Report CPU features
+        if: runner.os != 'Windows'
+        run: |
+          if [ -r /proc/cpuinfo ]; then
+            grep -m1 -E '^(flags|Features)' /proc/cpuinfo | tr ' ' '\n' \
+              | grep -xE 'bmi1|bmi2|avx2|avx512f|sha3|asimd' | sort -u | paste -sd' ' -
+          else
+            sysctl -n hw.optional.armv8_2_sha3 hw.optional.arm.FEAT_SHA3 2>/dev/null \
+              | paste -sd' ' - | sed 's/^/armv8_2_sha3 FEAT_SHA3: /'
+          fi
+      - run: go vet ./...
+      - run: go test -race ./...
+      # purego is skipped only on windows: the ubuntu (amd64) and macos
+      # (arm64) legs already cover the fallback on both architectures.
+      - if: runner.os != 'Windows'
+        run: go test -tags purego ./...
+      - name: Fuzz Sum256 against x/crypto reference
+        if: runner.os != 'Windows'
+        run: go test -run=^$ -fuzz FuzzSum256 -fuzztime 20s .
+      - name: Fuzz streaming Write chunking
+        if: runner.os != 'Windows'
+        run: go test -run=^$ -fuzz FuzzWriteChunks -fuzztime 20s .
+      - name: Upload fuzz crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-corpus-${{ matrix.os }}
+          path: testdata/fuzz/
+          if-no-files-found: ignore
+
+  # 32-bit build of the non-asm fallback, plus the generated-assembly drift
+  # check (the generator's output is GOARCH-independent).
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # GOARCH is scoped to the vet/test steps so `go generate` below runs
+      # with the runner's native architecture.
+      - run: go vet ./...
+        env:
+          GOARCH: "386"
+      - run: go test ./...
+        env:
+          GOARCH: "386"
+      # Regenerate the amd64 assembly and fail if it differs from what is
+      # committed.
+      #
+      # This is NOT a correctness check — the tests and the fuzzing against
+      # x/crypto cover that. It answers a different question: which file is
+      # the source of truth. keccakf_amd64_bmi2.s is 4.6k lines emitted by a
+      # 175-line generator; nobody can meaningfully review the assembly, but
+      # anyone can review the generator. Pinning ".s == generator output" is
+      # what makes reviewing the generator a valid substitute, and it
+      # enforces the `DO NOT EDIT` header the generated file already carries.
+      #
+      # The failure it prevents: someone optimizes the .s directly (it is the
+      # file that compiles, and where the profiler points), tests pass, it
+      # ships — and months later an unrelated `go generate` silently reverts
+      # it, leaving a perf regression with no suspect in the diff. The mirror
+      # case, editing the generator without re-running it, leaves the
+      # generator a lie about what actually compiles.
+      #
+      # Scope note: amd64 only. keccakf_arm64.s is hand-written (copied from
+      # Go's crypto/internal/fips140/sha3), so nothing regenerates it.
+      - name: Regenerate amd64 assembly
+        run: go generate ./...
+      - name: Check generated assembly matches committed file
+        # Scoped to *.s so unrelated untracked files (editor state, stray
+        # build output) cannot fail this step under a name that blames the
+        # generator; intent-to-add keeps newly created output visible.
+        run: git add -A -N -- '*.s' && git diff --exit-code -- '*.s'
