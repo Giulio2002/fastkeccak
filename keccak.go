@@ -15,6 +15,8 @@ const rate = 136 // sponge rate for Keccak-256: (1600 - 2*256) / 8
 
 var _ KeccakState = (*Hasher)(nil)
 
+// NewFastKeccak returns a new Keccak-256 hasher. The zero value of Hasher is
+// equally usable and avoids the allocation.
 func NewFastKeccak() *Hasher {
 	return &Hasher{}
 }
