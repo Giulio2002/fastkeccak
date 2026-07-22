@@ -124,15 +124,17 @@ func xcAppendState(b []byte, xc KeccakState) ([]byte, error) {
 // xcFromState builds a wrapped x/crypto/sha3 hasher holding the given
 // canonical sponge state.
 func xcFromState(state *[200]byte, squeezing bool, pos int) (KeccakState, error) {
-	blob := make([]byte, 0, xcSize)
-	blob = append(blob, xcMagic...)
-	blob = append(blob, byte(rate))
-	blob = append(blob, state[:]...)
-	var dir byte
+	// Mirror the layout xcAppendState decodes: magic || rate || state || n
+	// || direction. blob does not escape (x/crypto reads it and copies),
+	// so this is stack-resident.
+	var blob [xcSize]byte
+	copy(blob[:], xcMagic)
+	blob[4] = byte(rate)
+	copy(blob[5:205], state[:])
+	blob[205] = byte(pos)
 	if squeezing {
-		dir = 1
+		blob[206] = 1
 	}
-	blob = append(blob, byte(pos), dir)
 
 	st, ok := sha3.NewLegacyKeccak256().(KeccakState)
 	if !ok {
@@ -142,7 +144,7 @@ func xcFromState(state *[200]byte, squeezing bool, pos int) (KeccakState, error)
 	if !ok {
 		return nil, errXCFormat
 	}
-	if err := u.UnmarshalBinary(blob); err != nil {
+	if err := u.UnmarshalBinary(blob[:]); err != nil {
 		return nil, err
 	}
 	return st, nil
