@@ -1,6 +1,6 @@
 # fastkeccak
 
-Fast, zero-allocation Keccak-256 for Go with platform-specific assembly.
+Fast, zero-allocation Keccak-256 for Go with platform-specific assembly. (Zero-allocation on the accelerated paths; the fallback below delegates to `x/crypto/sha3`, which allocates.)
 
 Go's `crypto/sha3` only exposes SHA-3 (domain `0x06`), not Keccak-256 (domain `0x01`).
 `x/crypto/sha3.NewLegacyKeccak256()` provides Keccak-256 but uses a pure-Go permutation on all platforms.
