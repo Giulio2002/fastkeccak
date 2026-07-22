@@ -164,6 +164,24 @@ func TestAppendBinary(t *testing.T) {
 	}
 }
 
+// badState is a KeccakState that does not implement encoding.BinaryMarshaler,
+// so xcAppendState takes its error path.
+type badState struct{ KeccakState }
+
+// TestAppendBinaryErrorKeepsPrefix checks the encoding.BinaryAppender contract:
+// on error the input slice is returned unchanged, not dropped.
+func TestAppendBinaryErrorKeepsPrefix(t *testing.T) {
+	prefix := []byte("existing")
+	b := append([]byte(nil), prefix...)
+	got, err := xcAppendState(b, badState{})
+	if err == nil {
+		t.Fatal("expected an error from a state without BinaryMarshaler")
+	}
+	if !bytes.Equal(got, prefix) {
+		t.Fatalf("prefix dropped on error: got %q, want %q", got, prefix)
+	}
+}
+
 func TestUnmarshalErrors(t *testing.T) {
 	var h Hasher
 	h.Write([]byte("valid"))

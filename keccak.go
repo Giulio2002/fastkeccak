@@ -103,16 +103,18 @@ var errXCFormat = errors.New("keccak: unexpected x/crypto/sha3 state format")
 // canonical format. x/crypto keeps partial input XORed into the state with n
 // as the block offset, which matches the canonical layout directly.
 func xcAppendState(b []byte, xc KeccakState) ([]byte, error) {
+	// On error return b unchanged, per the encoding.BinaryAppender contract,
+	// so a caller's existing prefix is not dropped.
 	m, ok := xc.(encoding.BinaryMarshaler)
 	if !ok {
-		return nil, errXCFormat
+		return b, errXCFormat
 	}
 	enc, err := m.MarshalBinary()
 	if err != nil {
-		return nil, err
+		return b, err
 	}
 	if len(enc) != xcSize || string(enc[:len(xcMagic)]) != xcMagic || int(enc[4]) != rate {
-		return nil, errXCFormat
+		return b, errXCFormat
 	}
 	var state [200]byte
 	copy(state[:], enc[5:205])
