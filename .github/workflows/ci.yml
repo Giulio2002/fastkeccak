@@ -30,7 +30,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.26.5"
       # Makes "which implementation did this job actually test?" answerable
       # from the log, instead of assumed.
       - name: Report CPU features
@@ -73,7 +73,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: stable
+          go-version: "1.26.5"
       # GOARCH is scoped to the vet/test steps so `go generate` below runs
       # with the runner's native architecture.
       - run: go vet ./...
