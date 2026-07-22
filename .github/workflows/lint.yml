@@ -83,10 +83,39 @@ jobs:
       # a package keccak directory).
       - name: gofmt
         run: |
+          set -euo pipefail
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
             echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1
           fi
+
+      # asmfmt is gofmt for Go assembly — the only formatter that exists for
+      # it. Both .s files are kept asmfmt-clean, including the generated one:
+      # `go generate` pipes the generator's output through asmfmt (see the
+      # directives in keccak.go), so this check and the generated-assembly
+      # drift check in ci.yml cannot contradict each other.
+      #
+      # Auditing note: keccakf_arm64.s is copied from Go's
+      # crypto/internal/fips140/sha3. Compare it against upstream with
+      # `diff -w`, since asmfmt changes only whitespace.
+      - name: asmfmt
+        run: |
+          # `set -e` is the runner's default shell flag, but state it so the
+          # guarantee does not depend on that: a tool failure (bad module
+          # fetch, parse error) must fail the step rather than be read as
+          # "no diff". One version string, one invocation — `-d` is silent
+          # when the files are clean and prints the diff when they are not.
+          # The suggested fix is asmfmt itself; `go generate` would only
+          # reach the generated amd64 file, not hand-written assembly.
+          set -euo pipefail
+          asmfmt="github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2"
+          diff="$(go run "$asmfmt" -d .)"
+          if [ -n "$diff" ]; then
+            echo "::error::assembly is not asmfmt-clean; fix with: go run $asmfmt -w ."
+            echo "$diff"
+            exit 1
+          fi
+
       - name: go.mod tidy
         run: go mod tidy -diff
       - name: govulncheck
