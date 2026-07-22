@@ -73,7 +73,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.mod
+          # This job runs developer tooling (gofmt, go generate,
+          # govulncheck), not the library itself. govulncheck v1.6.0
+          # requires Go >= 1.25 — above the module's declared floor — so
+          # this job pins a fixed recent toolchain, while the test/lint
+          # jobs use go.mod to verify the library on the floor it claims.
+          go-version: "1.26.5"
       # GOARCH is scoped to the vet/test steps so `go generate` below runs
       # with the runner's native architecture.
       - run: go vet ./...
