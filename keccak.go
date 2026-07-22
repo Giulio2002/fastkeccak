@@ -2,8 +2,12 @@
 package keccak
 
 // The amd64 BMI2 permutation is generated; keep the .s file in sync by
-// running `go generate` (checked in CI).
+// running `go generate` (checked in CI). The generator emits unaligned
+// assembly, so asmfmt runs over its output — the committed .s must satisfy
+// the asmfmt check like any hand-written one. Pinned, and fetched by
+// `go run pkg@version`, which does not touch go.mod.
 //go:generate go run gen_keccakf_bmi2.go
+//go:generate go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -w keccakf_amd64_bmi2.s
 
 import (
 	"encoding"
