@@ -55,6 +55,14 @@ jobs:
       - name: Fuzz streaming Write chunking
         if: runner.os != 'Windows'
         run: go test -run=^$ -fuzz FuzzWriteChunks -fuzztime 20s .
+      # UnmarshalBinary is the only entry point that parses bytes the caller
+      # did not produce this run (they came off disk), so it gets fuzzed on
+      # both implementations rather than only the one this runner selects.
+      - name: Fuzz marshaled-state decoding
+        if: runner.os != 'Windows'
+        run: |
+          go test -run=^$ -fuzz FuzzUnmarshalBinary -fuzztime 20s .
+          go test -tags purego -run=^$ -fuzz FuzzUnmarshalBinary -fuzztime 20s .
       - name: Upload fuzz crash reproducers
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
