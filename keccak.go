@@ -72,10 +72,11 @@ func appendState(b []byte, state *[200]byte, squeezing bool, pos int) []byte {
 
 // parseState validates and decodes a canonical encoding.
 //
-// pos == rate is valid only while squeezing: the x/crypto implementation
-// permutes lazily on the next Read, so a state squeezed to an exact block
-// boundary persists with pos == rate. The native decoder normalizes it by
-// permuting eagerly.
+// pos == rate is valid only while squeezing: both implementations permute
+// lazily on the next Read, so a squeeze stopped at an exact block boundary
+// persists as pos == rate rather than as pos == 0 of the next block.
+// Absorbing never reaches pos == rate, because a filled block is permuted
+// immediately.
 func parseState(data []byte) (state [200]byte, squeezing bool, pos int, err error) {
 	if len(data) != marshaledSize || string(data[:len(marshalMagic)]) != marshalMagic {
 		return state, false, 0, errInvalidState
@@ -121,6 +122,23 @@ func xcAppendState(b []byte, xc KeccakState) ([]byte, error) {
 	return appendState(b, &state, enc[206] == 1, int(enc[205])), nil
 }
 
+// xcFromBlob builds a fresh wrapped x/crypto/sha3 hasher from an encoding in
+// x/crypto's own marshal layout.
+func xcFromBlob(blob []byte) (KeccakState, error) {
+	st, ok := sha3.NewLegacyKeccak256().(KeccakState)
+	if !ok {
+		return nil, errXCFormat
+	}
+	u, ok := st.(encoding.BinaryUnmarshaler)
+	if !ok {
+		return nil, errXCFormat
+	}
+	if err := u.UnmarshalBinary(blob); err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
 // xcFromState builds a wrapped x/crypto/sha3 hasher holding the given
 // canonical sponge state.
 func xcFromState(state *[200]byte, squeezing bool, pos int) (KeccakState, error) {
@@ -135,19 +153,7 @@ func xcFromState(state *[200]byte, squeezing bool, pos int) (KeccakState, error)
 	if squeezing {
 		blob[206] = 1
 	}
-
-	st, ok := sha3.NewLegacyKeccak256().(KeccakState)
-	if !ok {
-		return nil, errXCFormat
-	}
-	u, ok := st.(encoding.BinaryUnmarshaler)
-	if !ok {
-		return nil, errXCFormat
-	}
-	if err := u.UnmarshalBinary(blob[:]); err != nil {
-		return nil, err
-	}
-	return st, nil
+	return xcFromBlob(blob[:])
 }
 
 // cloneXC deep-copies a wrapped x/crypto/sha3 hasher via a marshal round-trip.
@@ -160,16 +166,5 @@ func cloneXC(xc KeccakState) (KeccakState, error) {
 	if err != nil {
 		return nil, err
 	}
-	st, ok := sha3.NewLegacyKeccak256().(KeccakState)
-	if !ok {
-		return nil, errXCFormat
-	}
-	u, ok := st.(encoding.BinaryUnmarshaler)
-	if !ok {
-		return nil, errXCFormat
-	}
-	if err := u.UnmarshalBinary(enc); err != nil {
-		return nil, err
-	}
-	return st, nil
+	return xcFromBlob(enc)
 }

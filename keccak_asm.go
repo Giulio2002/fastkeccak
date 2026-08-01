@@ -95,13 +95,18 @@ func (s *sponge) Read(out []byte) (int, error) {
 
 	n := len(out)
 	for len(out) > 0 {
-		x := copy(out, s.state[s.readIdx:rate])
-		s.readIdx += x
-		out = out[x:]
+		// Permute lazily, on demand rather than on reaching the end of a
+		// block. A read that stops exactly at a block boundary therefore
+		// leaves readIdx == rate and skips a permutation it may never need.
+		// x/crypto/sha3 squeezes the same way, which is what lets both
+		// implementations marshal a boundary-stopped squeeze identically.
 		if s.readIdx == rate {
 			keccakF1600(&s.state)
 			s.readIdx = 0
 		}
+		x := copy(out, s.state[s.readIdx:rate])
+		s.readIdx += x
+		out = out[x:]
 	}
 	return n, nil
 }
@@ -284,12 +289,9 @@ func (h *Hasher) UnmarshalBinary(data []byte) error {
 	// XORs buf into state at finalization, and XORing zeroes is a no-op.
 	s := sponge{state: state}
 	if squeezing {
-		if pos == rate {
-			// Block-boundary state from the lazy fallback implementation;
-			// the native sponge permutes eagerly.
-			keccakF1600(&s.state)
-			pos = 0
-		}
+		// pos == rate (a squeeze stopped at a block boundary) needs no
+		// special handling: Read permutes lazily, so it is a state this
+		// sponge produces and consumes directly.
 		s.squeezing, s.readIdx = true, pos
 	} else {
 		s.absorbed = pos
