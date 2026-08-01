@@ -9,6 +9,16 @@
 // func keccakF1600Sha3(a *[200]byte, buf *byte)
 // When buf != nil, XORs rate bytes into state before permuting.
 // When buf == nil, just permutes.
+//
+// The whole state lives in V0-V24 and never spills, so the frame is $0 and the
+// function is a leaf: no stack-growth check, no frame setup/teardown per
+// permutation. NOSPLIT records that requirement for anyone who later adds a
+// frame here.
+//
+// Deliberate divergence from upstream: Go's
+// crypto/internal/fips140/sha3/sha3_arm64.s (where the round body below comes
+// from) declares $200-8, a frame it never uses either. Keep the $0 when
+// re-syncing against upstream.
 TEXT ·keccakF1600Sha3(SB), NOSPLIT, $0-16
 	MOVD a+0(FP), R0
 	MOVD buf+8(FP), R3
