@@ -304,21 +304,10 @@ func TestCrossImplementationEncodingsMatch(t *testing.T) {
 	}
 }
 
-func TestHasherTrivia(t *testing.T) {
-	h := NewFastKeccak()
-	if h.Size() != 32 {
-		t.Fatalf("Size() = %d, want 32", h.Size())
-	}
-	if h.BlockSize() != rate {
-		t.Fatalf("BlockSize() = %d, want %d", h.BlockSize(), rate)
-	}
-
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic on Sum256 after Read")
-		}
-	}()
-	h.Write([]byte("x"))
-	h.Read(make([]byte, 32))
-	h.Sum256()
+// TestFallbackHasherShape re-runs the implementation-independent surface
+// through the fallback arms, where the panic comes out of x/crypto rather
+// than the native sponge.
+func TestFallbackHasherShape(t *testing.T) {
+	forceFallback(t)
+	checkHasherShape(t)
 }

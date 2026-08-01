@@ -326,3 +326,28 @@ func BenchmarkKeccakStreaming_Sha3(b *testing.B) {
 		h.Read(buf[:])
 	}
 }
+
+// checkHasherShape covers the small implementation-independent surface: the
+// hash.Hash dimensions, and the documented panic on summing a sponge that has
+// already been squeezed. Shared so the fallback arms can be held to it too.
+func checkHasherShape(t *testing.T) {
+	t.Helper()
+	h := NewFastKeccak()
+	if h.Size() != 32 {
+		t.Errorf("Size() = %d, want 32", h.Size())
+	}
+	if h.BlockSize() != rate {
+		t.Errorf("BlockSize() = %d, want %d", h.BlockSize(), rate)
+	}
+
+	defer func() {
+		if recover() == nil {
+			t.Error("expected panic on Sum256 after Read")
+		}
+	}()
+	h.Write([]byte("x"))
+	h.Read(make([]byte, 32))
+	h.Sum256()
+}
+
+func TestHasherShape(t *testing.T) { checkHasherShape(t) }
