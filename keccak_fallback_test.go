@@ -227,6 +227,83 @@ func TestCrossImplementationMarshal(t *testing.T) {
 	}
 }
 
+// TestCrossImplementationEncodingsMatch checks the byte-identity claim across
+// the state space, not just one absorbing state: every reachable kind of
+// position, on both sides of the absorb/squeeze switch.
+//
+// The interesting entries are the block-boundary ones. Absorbing permutes
+// eagerly on a filled block and squeezing permutes lazily on the next Read, so
+// a squeeze that stops exactly at a boundary is the one state that two sponges
+// can hold in two different-looking but equivalent forms (pre-permute at
+// pos == rate, or post-permute at pos == 0). Both implementations squeeze
+// lazily so that it always encodes the first way.
+func TestCrossImplementationEncodingsMatch(t *testing.T) {
+	if !useASM {
+		t.Skip("native implementation unavailable on this CPU")
+	}
+	data := fallbackData(200)
+
+	for _, tc := range []struct {
+		name  string
+		drive func(h *Hasher)
+	}{
+		{"zero value", func(*Hasher) {}},
+		{"absorbing, partial block", func(h *Hasher) { h.Write(data[:50]) }},
+		{"absorbing, exact block", func(h *Hasher) { h.Write(data[:rate]) }},
+		{"absorbing, past a block", func(h *Hasher) { h.Write(data) }},
+		{"squeezing, nothing read", func(h *Hasher) { h.Write(data); h.Read(nil) }},
+		{"squeezing, partial block", func(h *Hasher) { h.Write(data); h.Read(make([]byte, 50)) }},
+		{"squeezing, exact block", func(h *Hasher) { h.Write(data); h.Read(make([]byte, rate)) }},
+		{"squeezing, two blocks", func(h *Hasher) { h.Write(data); h.Read(make([]byte, 2*rate)) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// What the state is worth: the next 300 squeezed bytes.
+			var ref Hasher
+			tc.drive(&ref)
+			want := make([]byte, 300)
+			ref.Read(want)
+
+			encode := func(h *Hasher) []byte {
+				tc.drive(h)
+				enc, err := h.MarshalBinary()
+				if err != nil {
+					t.Fatalf("MarshalBinary: %v", err)
+				}
+				return enc
+			}
+			var n Hasher
+			encNative := encode(&n)
+			var encFallback []byte
+			asFallback(func() {
+				var f Hasher
+				encFallback = encode(&f)
+			})
+			if !bytes.Equal(encNative, encFallback) {
+				t.Fatalf("encodings differ:\nnative:   %x\nfallback: %x", encNative, encFallback)
+			}
+
+			// Each implementation restores the other's encoding to a sponge
+			// that produces the same output.
+			check := func(who string, h *Hasher, enc []byte) {
+				if err := h.UnmarshalBinary(enc); err != nil {
+					t.Fatalf("%s UnmarshalBinary: %v", who, err)
+				}
+				got := make([]byte, len(want))
+				h.Read(got)
+				if !bytes.Equal(got, want) {
+					t.Fatalf("%s squeezed a different stream after restore", who)
+				}
+			}
+			var toNative Hasher
+			check("native<-fallback", &toNative, encFallback)
+			asFallback(func() {
+				var toFallback Hasher
+				check("fallback<-native", &toFallback, encNative)
+			})
+		})
+	}
+}
+
 func TestHasherTrivia(t *testing.T) {
 	h := NewFastKeccak()
 	if h.Size() != 32 {

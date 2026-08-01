@@ -164,6 +164,103 @@ func TestAppendBinary(t *testing.T) {
 	}
 }
 
+// TestMarshalDoesNotMutate checks that marshaling is a read of the hasher, not
+// a step in its lifecycle: encoding must be repeatable and must not disturb the
+// digest or the squeeze stream. The native absorbing path is the one at risk,
+// since it has to fold buffered input into a copy of the state.
+func TestMarshalDoesNotMutate(t *testing.T) {
+	for _, n := range []int{0, 1, 50, rate, rate + 7, 2*rate + 1} {
+		data := make([]byte, n)
+		for i := range data {
+			data[i] = byte(i * 11)
+		}
+		var h Hasher
+		h.Write(data)
+
+		first, err := h.MarshalBinary()
+		if err != nil {
+			t.Fatalf("n=%d: MarshalBinary: %v", n, err)
+		}
+		second, err := h.MarshalBinary()
+		if err != nil {
+			t.Fatalf("n=%d: MarshalBinary (again): %v", n, err)
+		}
+		if !bytes.Equal(first, second) {
+			t.Fatalf("n=%d: marshaling twice gave different bytes", n)
+		}
+		if got, want := h.Sum256(), Sum256(data); got != want {
+			t.Fatalf("n=%d: digest after marshal = %x, want %x", n, got, want)
+		}
+
+		// Same again, mid-squeeze.
+		var s Hasher
+		s.Write(data)
+		s.Read(make([]byte, rate)) // stops on a block boundary
+		if first, err = s.MarshalBinary(); err != nil {
+			t.Fatalf("n=%d: mid-squeeze MarshalBinary: %v", n, err)
+		}
+		if second, err = s.MarshalBinary(); err != nil {
+			t.Fatalf("n=%d: mid-squeeze MarshalBinary (again): %v", n, err)
+		}
+		if !bytes.Equal(first, second) {
+			t.Fatalf("n=%d: mid-squeeze marshaling twice gave different bytes", n)
+		}
+
+		var restored Hasher
+		if err := restored.UnmarshalBinary(second); err != nil {
+			t.Fatalf("n=%d: UnmarshalBinary: %v", n, err)
+		}
+		got, want := make([]byte, 200), make([]byte, 200)
+		s.Read(want)
+		restored.Read(got)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("n=%d: squeeze diverged after marshaling the source twice", n)
+		}
+	}
+}
+
+// FuzzUnmarshalBinary checks the two properties that matter for a decoder fed
+// persisted bytes from disk: it never panics, and whatever it accepts it
+// re-encodes exactly. The format carries no redundancy and no
+// implementation-specific normalization, so accept-then-marshal is the
+// identity — if that ever stops holding, two hosts can disagree about the
+// bytes for one state.
+func FuzzUnmarshalBinary(f *testing.F) {
+	seed := func(drive func(h *Hasher)) {
+		var h Hasher
+		drive(&h)
+		enc, err := h.MarshalBinary()
+		if err != nil {
+			f.Fatalf("seed MarshalBinary: %v", err)
+		}
+		f.Add(enc)
+	}
+	seed(func(*Hasher) {})
+	seed(func(h *Hasher) { h.Write([]byte("seed")) })
+	seed(func(h *Hasher) { h.Write(make([]byte, rate-1)) })
+	seed(func(h *Hasher) { h.Write(make([]byte, rate)) })
+	seed(func(h *Hasher) { h.Write([]byte("seed")); h.Read(make([]byte, 7)) })
+	seed(func(h *Hasher) { h.Write([]byte("seed")); h.Read(make([]byte, rate)) })
+	f.Add([]byte(nil))
+	f.Add([]byte(marshalMagic))
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		var h Hasher
+		if err := h.UnmarshalBinary(data); err != nil {
+			return // rejected inputs only have to not panic
+		}
+		enc, err := h.MarshalBinary()
+		if err != nil {
+			t.Fatalf("MarshalBinary after accepting %x: %v", data, err)
+		}
+		if !bytes.Equal(enc, data) {
+			t.Fatalf("re-encode changed the bytes:\n in: %x\nout: %x", data, enc)
+		}
+		// An accepted state must also be usable.
+		h.Read(make([]byte, 300))
+	})
+}
+
 // badState is a KeccakState that does not implement encoding.BinaryMarshaler,
 // so xcAppendState takes its error path.
 type badState struct{ KeccakState }
