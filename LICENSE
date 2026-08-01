@@ -1,10 +1,5 @@
-Copyright 2026 The erigon Authors.
+Copyright 2026 The Erigon Authors.
 Copyright 2009 The Go Authors.
-
-This repository contains code derived from the Go standard library and
-golang.org/x/crypto (in particular, keccakf_arm64.s is derived from Go's
-src/crypto/internal/fips140/sha3/sha3_arm64.s). All code in this
-repository is licensed under the BSD-3-Clause license below.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are

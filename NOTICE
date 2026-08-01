@@ -1,0 +1,16 @@
+fastkeccak
+
+This package descends from golang.org/x/crypto/sha3, which is where its
+Keccak-256 semantics come from and which it still calls directly on platforms
+and CPUs without an accelerated path.
+
+Portions are derived from code copyright The Go Authors:
+
+  * keccakf_arm64.s — the Keccak-f[1600] round body is taken verbatim from
+    Go's src/crypto/internal/fips140/sha3/sha3_arm64.s. The file retains its
+    original copyright header; the fused XOR-and-permute entry path and the
+    frame declaration are the local additions.
+
+All code in this repository, original and derived, is licensed under the
+BSD-3-Clause license in LICENSE — the same license the derived code carries
+upstream.
