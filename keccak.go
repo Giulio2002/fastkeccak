@@ -9,7 +9,13 @@ package keccak
 //go:generate go run gen_keccakf_bmi2.go
 //go:generate go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -w keccakf_amd64_bmi2.s
 
-import "hash"
+import (
+	"encoding"
+	"errors"
+	"hash"
+
+	"golang.org/x/crypto/sha3"
+)
 
 // KeccakState wraps the keccak hasher. In addition to the usual hash methods, it also supports
 // Read to get a variable amount of data from the hash state. Read is faster than Sum
@@ -27,4 +33,27 @@ var _ KeccakState = (*Hasher)(nil)
 // equally usable and avoids the allocation.
 func NewFastKeccak() *Hasher {
 	return &Hasher{}
+}
+
+var errCloneUnsupported = errors.New("keccak: fallback hasher does not support cloning")
+
+func cloneXCrypto(state KeccakState) (KeccakState, error) {
+	marshaler, ok := state.(encoding.BinaryMarshaler)
+	if !ok {
+		return nil, errCloneUnsupported
+	}
+	encoded, err := marshaler.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+
+	clone := sha3.NewLegacyKeccak256().(KeccakState)
+	unmarshaler, ok := clone.(encoding.BinaryUnmarshaler)
+	if !ok {
+		return nil, errCloneUnsupported
+	}
+	if err := unmarshaler.UnmarshalBinary(encoded); err != nil {
+		return nil, err
+	}
+	return clone, nil
 }
