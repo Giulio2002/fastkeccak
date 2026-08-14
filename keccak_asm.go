@@ -95,13 +95,13 @@ func (s *sponge) Read(out []byte) (int, error) {
 
 	n := len(out)
 	for len(out) > 0 {
-		x := copy(out, s.state[s.readIdx:rate])
-		s.readIdx += x
-		out = out[x:]
 		if s.readIdx == rate {
 			keccakF1600(&s.state)
 			s.readIdx = 0
 		}
+		x := copy(out, s.state[s.readIdx:rate])
+		s.readIdx += x
+		out = out[x:]
 	}
 	return n, nil
 }
