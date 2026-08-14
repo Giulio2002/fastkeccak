@@ -1,46 +1,51 @@
-# faster_keccak
+# fastkeccak
 
-Fast, zero-allocation Keccak-256 for Go with platform-specific assembly.
+Fast Keccak-256 for Go with platform-specific assembly.
 
-Go's `crypto/sha3` only exposes SHA-3 (domain `0x06`), not Keccak-256 (domain `0x01`).
-`x/crypto/sha3.NewLegacyKeccak256()` provides Keccak-256 but uses a pure-Go permutation on all platforms.
-This package uses assembly-optimized keccak-f[1600] permutations instead:
+Keccak-256 uses domain byte `0x01`, while SHA3-256 uses `0x06`. Go's
+`crypto/sha3` package provides SHA-3, and `golang.org/x/crypto/sha3` provides
+the legacy Keccak variant used by Ethereum.
 
-- **arm64 (Apple Silicon):** NEON SHA3 extensions (EOR3, RAX1, XAR, BCAX)
-- **amd64:** Unrolled permutation with complementing lanes optimization
-- **Fallback:** Pure-Go implementation (or with `purego` build tag)
+fastkeccak selects an implementation for the current platform:
+
+- **arm64:** Armv8.2-A SHA3 assembly selected by OS and CPU feature checks
+- **amd64:** BMI1/BMI2 assembly when the CPU reports support
+- **fallback:** `golang.org/x/crypto/sha3` on other CPUs and platforms, or
+  when built with the `purego` tag
+
+## Install
+
+```bash
+go get github.com/erigontech/fastkeccak
+```
 
 ## Usage
 
 ```go
-import "github.com/Giulio2002/faster_keccak"
+import "github.com/erigontech/fastkeccak"
 
 // One-shot
-digest := keccak.Sum256(data)
+sum := keccak.Sum256(data)
 
-// Streaming (zero allocs, stack-allocated)
+// Streaming
 var h keccak.Hasher
 h.Write(part1)
 h.Write(part2)
-digest := h.Sum256()
+streamSum := h.Sum256()
 ```
 
 ## Benchmarks
 
+Performance depends on the CPU, operating system, and Go version. Run the
+benchmarks on the target system:
 
-### faster_keccak vs x/crypto/sha3
+```bash
+go test -run '^$' -bench . -benchmem
+```
 
-| Size | faster_keccak | x/crypto | Speedup |
-|------|--------------|----------|---------|
-| 32 B | 116.4 ns/op (275 MB/s) | 244.8 ns/op (131 MB/s) | **2.1x** |
-| 128 B | 121.8 ns/op (1051 MB/s) | 244.1 ns/op (524 MB/s) | **2.0x** |
-| 256 B | 247.1 ns/op (1036 MB/s) | 467.7 ns/op (547 MB/s) | **1.9x** |
-| 1 KB | 988.9 ns/op (1035 MB/s) | 1801 ns/op (569 MB/s) | **1.8x** |
-| 4 KB | 3857 ns/op (1062 MB/s) | 6896 ns/op (594 MB/s) | **1.8x** |
-| 500 KB | 485.6 us/op (1054 MB/s) | 836.8 us/op (612 MB/s) | **1.7x** |
-
-Zero allocations across all sizes (x/crypto allocates 32 B/op).
-
+Compare benchmarks with the same one-shot or streaming call shape. Supplying
+`nil` to `hash.Hash.Sum` asks it to allocate an output slice and should not be
+used to infer whether the hash implementation itself allocates.
 
 ## Testing
 
