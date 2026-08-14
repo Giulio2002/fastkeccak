@@ -12,7 +12,11 @@ import (
 // On other ARM64 platforms, detect at runtime via CPU feature flags.
 // When SHA3 is unavailable, falls back to x/crypto/sha3.
 func init() {
-	useASM = runtime.GOOS == "darwin" || runtime.GOOS == "ios" || cpu.ARM64.HasSHA3
+	useASM = supportsSHA3(runtime.GOOS, cpu.ARM64.HasSHA3)
+}
+
+func supportsSHA3(goos string, detected bool) bool {
+	return goos == "darwin" || detected
 }
 
 // keccakF1600Sha3 permutes state. When buf != nil, it first XORs rate bytes
