@@ -188,9 +188,8 @@ func (h *Hasher) Sum256() [32]byte {
 		if h.xc == nil {
 			return Sum256(nil)
 		}
-		var out [32]byte
-		h.xc.Sum(out[:0])
-		return out
+		h.xc.Sum(h.buf[:0])
+		return [32]byte(h.buf[:32])
 	}
 	return h.sponge.Sum256()
 }
