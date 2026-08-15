@@ -143,8 +143,7 @@ func xcFromBlob(blob []byte) (KeccakState, error) {
 // canonical sponge state.
 func xcFromState(state *[200]byte, squeezing bool, pos int) (KeccakState, error) {
 	// Mirror the layout xcAppendState decodes: magic || rate || state || n
-	// || direction. blob does not escape (x/crypto reads it and copies),
-	// so this is stack-resident.
+	// || direction.
 	var blob [xcSize]byte
 	copy(blob[:], xcMagic)
 	blob[4] = byte(rate)

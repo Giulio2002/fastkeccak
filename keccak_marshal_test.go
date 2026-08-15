@@ -356,3 +356,49 @@ func TestMarshalCanonicalBytes(t *testing.T) {
 		t.Fatalf("squeezing encoding fingerprint = %s, want %s", got, want)
 	}
 }
+
+// measureMarshalAllocs reports what MarshalBinary and a pre-sized AppendBinary
+// cost on whichever implementation is active. The encoded slice is kept live:
+// dropping it lets escape analysis fold the buffer onto the stack, and the
+// measurement then reads a misleading 0.
+func measureMarshalAllocs(t *testing.T) (marshal, appendBuf float64) {
+	t.Helper()
+	var h Hasher
+	h.Write([]byte("partially absorbed input"))
+
+	var (
+		enc []byte
+		err error
+	)
+	marshal = testing.AllocsPerRun(100, func() {
+		enc, err = h.MarshalBinary()
+	})
+	if err != nil {
+		t.Fatalf("MarshalBinary: %v", err)
+	}
+	if len(enc) != marshaledSize {
+		t.Fatalf("MarshalBinary len = %d, want %d", len(enc), marshaledSize)
+	}
+
+	buf := make([]byte, 0, marshaledSize)
+	appendBuf = testing.AllocsPerRun(100, func() {
+		enc, err = h.AppendBinary(buf)
+	})
+	if err != nil {
+		t.Fatalf("AppendBinary: %v", err)
+	}
+	if len(enc) != marshaledSize {
+		t.Fatalf("AppendBinary len = %d, want %d", len(enc), marshaledSize)
+	}
+	return marshal, appendBuf
+}
+
+// Supplying a buffer must save exactly the one allocation MarshalBinary makes
+// for it, on every implementation.
+func TestAppendBinarySavesOneAlloc(t *testing.T) {
+	marshal, appendBuf := measureMarshalAllocs(t)
+	if marshal-appendBuf != 1 {
+		t.Errorf("supplying a buffer saved %v allocations, want 1 (MarshalBinary %v, AppendBinary %v)",
+			marshal-appendBuf, marshal, appendBuf)
+	}
+}

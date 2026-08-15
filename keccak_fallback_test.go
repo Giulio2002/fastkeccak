@@ -311,3 +311,20 @@ func TestFallbackHasherShape(t *testing.T) {
 	forceFallback(t)
 	checkHasherShape(t)
 }
+
+// The fallback pays two allocations to marshal, against one on the native
+// path, because it re-encodes x/crypto's own MarshalBinary result. Routing
+// x/crypto straight into the caller's buffer would remove that, at the cost
+// of making the buffer escape on both paths, so the difference stands.
+func TestMarshalAllocsPerPath(t *testing.T) {
+	if useASM {
+		if marshal, appendBuf := measureMarshalAllocs(t); marshal != 1 || appendBuf != 0 {
+			t.Errorf("native allocs = %v marshal / %v append, want 1 / 0", marshal, appendBuf)
+		}
+	}
+	asFallback(func() {
+		if marshal, appendBuf := measureMarshalAllocs(t); marshal != 2 || appendBuf != 1 {
+			t.Errorf("fallback allocs = %v marshal / %v append, want 2 / 1", marshal, appendBuf)
+		}
+	})
+}
