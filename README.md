@@ -47,23 +47,35 @@ Apple M4 Max (arm64, Armv8.2-A SHA3 extensions), Go 1.26.5, `-count=6`:
 | 4 KB | 3.928 us/op (1043 MB/s) | 7.108 us/op (576 MB/s) | **1.8x** |
 | 500 KB | 479.3 us/op (1068 MB/s) | 852.1 us/op (601 MB/s) | **1.8x** |
 
-AMD EPYC 4344P (amd64, Zen 4, BMI1/BMI2), Linux, Go 1.26.6, `-count=10`:
+AMD EPYC 4344P (amd64, Zen 4, BMI1/BMI2), Linux, Go 1.26.6, `-count=10`.
+x/crypto here reuses the digest buffer, so no allocation is charged to it:
 
 | Size | fastkeccak | x/crypto/sha3 | Speedup |
 |--------|------------------------|------------------------|---------|
-| 32 B | 203.2 ns/op (157 MB/s) | 256.7 ns/op (125 MB/s) | **1.26x** |
-| 128 B | 209.6 ns/op (611 MB/s) | 254.9 ns/op (502 MB/s) | **1.22x** |
-| 256 B | 490.4 ns/op (522 MB/s) | 483.1 ns/op (530 MB/s) | 0.99x |
-| 1 KB | 1.771 us/op (578 MB/s) | 1.832 us/op (559 MB/s) | **1.03x** |
-| 4 KB | 6.178 us/op (663 MB/s) | 7.013 us/op (584 MB/s) | **1.14x** |
-| 500 KB | 723.4 us/op (708 MB/s) | 845.8 us/op (605 MB/s) | **1.17x** |
+| 32 B | 203.5 ns/op (157 MB/s) | 244.3 ns/op (131 MB/s) | **1.20x** |
+| 128 B | 209.8 ns/op (610 MB/s) | 241.4 ns/op (530 MB/s) | **1.15x** |
+| 256 B | 473.4 ns/op (541 MB/s) | 468.4 ns/op (547 MB/s) | 0.99x |
+| 1 KB | 1.772 us/op (578 MB/s) | 1.815 us/op (564 MB/s) | **1.02x** |
+| 4 KB | 6.186 us/op (662 MB/s) | 6.988 us/op (586 MB/s) | **1.13x** |
+| 500 KB | 724.9 us/op (706 MB/s) | 845.0 us/op (606 MB/s) | **1.17x** |
 
 The BMI2 kernel wins by a much smaller margin than the arm64 one, and at 256 B
-it is about 1.5% slower than x/crypto — reproducible across runs, not noise.
-Treat the arm64 numbers as the best case rather than as what amd64 delivers.
+it is a shade slower than x/crypto — reproducible across runs, not noise. Treat
+the arm64 numbers as the best case rather than as what amd64 delivers.
 
-Zero allocations across all sizes on both; x/crypto allocates 32 B/op (1 alloc)
-for the digest. Reproduce with `go test -run=^$ -bench='FasterKeccak$|XCrypto$'`.
+The arm64 table above still compares `Sum256` against `x/crypto`'s `Sum(nil)`,
+which charges x/crypto one 32 B allocation per call, so its speedups are
+slightly flattering; it needs regenerating against the reused-buffer shape.
+
+`Sum256` returns an array and so cannot allocate. x/crypto returns a slice, but
+only allocates when the caller passes `nil` — `h.Sum(buf[:0])` is allocation
+free too, on both architectures. The zero-allocation property is an API
+difference, not a permanent x/crypto cost.
+
+`go test -run=^$ -bench='FasterKeccak$|XCrypto$'` reproduces the arm64 table.
+The amd64 x/crypto column came from a local variant of `BenchmarkXCrypto` ending
+in `out = [32]byte(h.Sum(out[:0]))` instead of `h.Sum(nil)`; the repository has
+no reused-buffer benchmark yet.
 
 ## Testing
 
