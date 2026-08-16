@@ -5,7 +5,7 @@
 #include "textflag.h"
 
 // func keccakF1600BMI2(a *[200]byte, buf *byte)
-TEXT ·keccakF1600BMI2(SB), $200-16
+TEXT ·keccakF1600BMI2(SB), NOSPLIT, $200-16
 	MOVQ  a+0(FP), DI
 	MOVQ  buf+8(FP), BX
 	TESTQ BX, BX
