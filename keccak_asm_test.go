@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"runtime/metrics"
 	"strconv"
 	"strings"
 	"testing"
@@ -93,94 +92,55 @@ func TestKernelKeepsStackCheck(t *testing.T) {
 	}
 }
 
-func stopTheWorldHistogram() []uint64 {
-	s := []metrics.Sample{{Name: "/sched/pauses/stopping/gc:seconds"}}
-	metrics.Read(s)
-	h := s[0].Value.Float64Histogram()
-	out := make([]uint64, len(h.Counts))
-	copy(out, h.Counts)
-	return out
-}
-
-// maxStopTheWorldSince reports the largest stop-the-world stopping pause
-// recorded since the given histogram snapshot.
-func maxStopTheWorldSince(before []uint64) time.Duration {
-	s := []metrics.Sample{{Name: "/sched/pauses/stopping/gc:seconds"}}
-	metrics.Read(s)
-	h := s[0].Value.Float64Histogram()
-	var worst float64
-	for i := range h.Counts {
-		if h.Counts[i] > before[i] {
-			worst = h.Buckets[i+1]
-		}
-	}
-	return time.Duration(worst * float64(time.Second))
-}
-
-// pauseWhileHashing hashes buf a few times under GC pressure and reports the
-// worst stop-the-world stopping pause the runtime recorded.
-func pauseWhileHashing(buf []byte) time.Duration {
-	var garbage []byte
-	stop := make(chan struct{})
+// gcWait reports the longest a GC had to wait while work ran in another
+// goroutine. Work the runtime cannot preempt shows up here directly.
+func gcWait(work func()) time.Duration {
 	done := make(chan struct{})
-	go func() { // keep asking for a stop-the-world
-		defer close(done)
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-			garbage = make([]byte, 1<<20)
-			runtime.GC()
-			time.Sleep(time.Millisecond)
+	go func() { defer close(done); work() }()
+	var worst time.Duration
+	for {
+		select {
+		case <-done:
+			return worst
+		default:
 		}
-	}()
-	time.Sleep(200 * time.Millisecond)
-
-	before := stopTheWorldHistogram()
-	for range 4 {
-		Sum256(buf)
+		start := time.Now()
+		runtime.GC()
+		worst = max(worst, time.Since(start))
 	}
-	time.Sleep(300 * time.Millisecond) // let a blocked stop-the-world finish and be recorded
-
-	got := maxStopTheWorldSince(before)
-	close(stop)
-	<-done
-	_ = garbage
-	return got
 }
 
 // TestSTWPauseWhileHashing measures the property the TEXT flags only imply: how
 // long the runtime waits for a hashing goroutine to yield.
 //
 // The budget is relative to the same hash computed through the pure-Go fallback,
-// which always has a preemption point, so a slow or noisy machine moves both
+// which always has a preemption point, so a slow or loaded runner moves both
 // numbers together and only a real regression separates them.
 func TestSTWPauseWhileHashing(t *testing.T) {
-	if testing.Short() {
-		t.Skip("hashes 32 MiB")
+	if testing.Short() || runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("hashes 32 MiB, and needs GOMAXPROCS >= 2 to see a stalled GC")
 	}
 	if !useASM {
 		t.Skip("hardware acceleration unavailable on this CPU")
 	}
-	if runtime.GOMAXPROCS(0) < 2 {
-		t.Skip("needs GOMAXPROCS >= 2 to observe a stopping pause")
-	}
-
-	buf := make([]byte, 32<<20)
+	buf := make([]byte, 32*1024*1024)
 
 	useASM = false // same call, preemptible implementation
-	floor := pauseWhileHashing(buf)
+	floor := gcWait(func() {
+		for range 4 {
+			Sum256(buf)
+		}
+	})
 	useASM = true
-	got := pauseWhileHashing(buf)
+	got := gcWait(func() {
+		for range 4 {
+			Sum256(buf)
+		}
+	})
 
-	t.Logf("max GC stop-the-world stopping pause: assembly %v, pure Go %v", got, floor)
-
-	// Healthy is microseconds either way; a missing preemption point is tens of
-	// milliseconds, which is orders above both the floor and the absolute bound.
+	t.Logf("worst GC wait: assembly %v, pure Go %v", got, floor)
 	if got > 5*time.Millisecond && got > 4*floor {
-		t.Fatalf("assembly path stalls the world for %v against %v for the pure-Go path: "+
+		t.Fatalf("a GC waited %v on the assembly path against %v on the pure-Go path: "+
 			"the block loop has no preemption point", got, floor)
 	}
 }
