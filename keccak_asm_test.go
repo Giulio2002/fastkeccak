@@ -60,12 +60,12 @@ func TestKernelKeepsStackCheck(t *testing.T) {
 	if err != nil || len(files) == 0 {
 		t.Fatalf("no assembly files found: %v", err)
 	}
-	found := 0
 	for _, f := range files {
 		src, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
+		found := 0
 		for i, line := range strings.Split(string(src), "\n") {
 			m := kernelTEXT.FindStringSubmatch(line)
 			if m == nil {
@@ -86,9 +86,10 @@ func TestKernelKeepsStackCheck(t *testing.T) {
 					"stack-growth check. Keep the frame at 128 bytes or more.", where, name, n)
 			}
 		}
-	}
-	if found == 0 {
-		t.Fatal("no keccakF1600 TEXT directive matched; was the kernel renamed?")
+		if found == 0 {
+			t.Errorf("%s: no keccakF1600 TEXT directive matched, so this kernel is "+
+				"unguarded; was it renamed?", f)
+		}
 	}
 }
 
