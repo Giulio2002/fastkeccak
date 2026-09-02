@@ -53,7 +53,7 @@ func TestXorAndPermute(t *testing.T) {
 //
 // Either one lets a single large Sum256 or Write hold every P in
 // stop-the-world for the length of the hash.
-var kernelTEXT = regexp.MustCompile(`^TEXT\s+·(keccakF1600\w*)\(SB\),\s*(?:([A-Z0-9|+]+),\s*)?\$(\d+)-\d+`)
+var kernelTEXT = regexp.MustCompile(`^TEXT\s+·(\w+)\(SB\),\s*(?:([A-Z0-9|+]+),\s*)?\$(\d+)-\d+`)
 
 func TestKernelKeepsStackCheck(t *testing.T) {
 	files, err := filepath.Glob("*.s")
@@ -91,8 +91,8 @@ func TestKernelKeepsStackCheck(t *testing.T) {
 			}
 		}
 		if found == 0 {
-			t.Errorf("%s: no keccakF1600 TEXT directive matched, so this kernel is "+
-				"unguarded; was it renamed?", f)
+			t.Errorf("%s: no TEXT directive matched, so nothing in this file is "+
+				"guarded; was the frame size turned into a #define?", f)
 		}
 	}
 }
