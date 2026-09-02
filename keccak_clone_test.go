@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-func testHasherClone(t *testing.T) {
-	t.Helper()
-
+func TestHasherClone(t *testing.T) {
 	var zero Hasher
 	zeroClone, err := zero.Clone()
 	if err != nil {
@@ -49,8 +47,4 @@ func testHasherClone(t *testing.T) {
 	if !bytes.Equal(got, want) {
 		t.Fatal("clone did not preserve an independent squeeze position")
 	}
-}
-
-func TestHasherClone(t *testing.T) {
-	testHasherClone(t)
 }
