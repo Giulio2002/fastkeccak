@@ -5,6 +5,7 @@ package keccak
 import (
 	"bytes"
 	"strconv"
+	"strings"
 	"testing"
 
 	"golang.org/x/crypto/sha3"
@@ -42,6 +43,9 @@ func TestRuntimeFallbackMatchesXCrypto(t *testing.T) {
 				h.Write(rest[:n])
 				rest = rest[n:]
 			}
+			if size > 0 && h.xc == nil {
+				t.Fatal("Write did not materialize the x/crypto state, so the fallback branch never ran")
+			}
 			if got := h.Sum256(); got != want {
 				t.Fatalf("Hasher.Sum256 = %x, want %x", got, want)
 			}
@@ -61,6 +65,13 @@ func TestRuntimeFallbackMatchesXCrypto(t *testing.T) {
 			h.Write(data)
 			if got := h.Sum256(); got != want {
 				t.Fatalf("Hasher after Reset = %x, want %x", got, want)
+			}
+
+			var fresh Hasher
+			fresh.Reset()
+			fresh.Write(data)
+			if got := fresh.Sum256(); got != want {
+				t.Fatalf("Reset on a zero value = %x, want %x", got, want)
 			}
 		})
 	}
@@ -94,12 +105,17 @@ func TestRuntimeFallbackWriteAfterReadPanics(t *testing.T) {
 	forceRuntimeFallback(t)
 
 	defer func() {
-		if recover() == nil {
+		r := recover()
+		if r == nil {
 			t.Fatal("expected panic on Write after Read")
+		}
+		if s, ok := r.(string); !ok || !strings.Contains(s, "Write after Read") {
+			t.Fatalf("recovered %v, want a Write-after-Read panic", r)
 		}
 	}()
 
 	var h Hasher
+	h.Write([]byte("seed"))
 	h.Read(make([]byte, 1))
 	h.Write([]byte("data"))
 }
