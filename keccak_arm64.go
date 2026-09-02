@@ -18,8 +18,13 @@ import (
 // likewise leaves iOS without CPU feature detection (its darwin sysctl
 // probing in internal/cpu is build-tagged `darwin && !ios`), so its SHA3
 // assembly never runs on iOS either.
+// hasASM is the CPU probe, recorded once. useASM is the dispatch flag and
+// benchmarks flip it, so anything asking "can this CPU run the assembly?"
+// must read hasASM.
+var hasASM = runtime.GOOS == "darwin" || cpu.ARM64.HasSHA3
+
 func init() {
-	useASM = runtime.GOOS == "darwin" || cpu.ARM64.HasSHA3
+	useASM = hasASM
 }
 
 // keccakF1600Sha3 permutes state. When buf != nil, it first XORs rate bytes

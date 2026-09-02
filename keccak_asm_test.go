@@ -5,6 +5,8 @@ package keccak
 import (
 	"math/rand"
 	"testing"
+
+	"golang.org/x/crypto/sha3"
 )
 
 // TestXorAndPermute verifies the fused XOR+permute assembly entry point
@@ -32,5 +34,56 @@ func TestXorAndPermute(t *testing.T) {
 		if a != b {
 			t.Fatalf("iteration %d: xorAndPermute diverges from xorIn+keccakF1600\ngot:  %x\nwant: %x", i, a, b)
 		}
+	}
+}
+
+// BenchmarkBackends compares the assembly backend against the x/crypto
+// fallback on the same CPU, to answer whether the assembly is actually
+// faster on this core. It flips useASM, so it must not run in parallel with
+// anything else in the package.
+func BenchmarkBackends(b *testing.B) {
+	restore := useASM
+	defer func() { useASM = restore }()
+
+	if hasASM {
+		b.Run("ASM", func(b *testing.B) { benchmarkBackend(b, true) })
+	}
+	b.Run("XCrypto", func(b *testing.B) { benchmarkBackend(b, false) })
+}
+
+func benchmarkBackend(b *testing.B, native bool) {
+	for _, size := range benchSizes {
+		data := make([]byte, size)
+		for i := range data {
+			data[i] = byte(i)
+		}
+
+		ref := sha3.NewLegacyKeccak256().(KeccakState)
+		ref.Write(data)
+		var want [32]byte
+		ref.Read(want[:])
+
+		b.Run(benchName(size), func(b *testing.B) {
+			useASM = native
+			var h Hasher
+			// Warm up outside the timer: with useASM false the first Reset
+			// lazily builds the x/crypto hasher, and that one allocation
+			// would otherwise be reported as a per-op cost.
+			h.Reset()
+			var out [32]byte
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			for b.Loop() {
+				h.Reset()
+				h.Write(data)
+				h.Read(out[:])
+			}
+			// Against x/crypto, not against the other arm: a -bench filter
+			// that runs only one arm would leave a cross-arm check with
+			// nothing to compare, and report success either way.
+			if out != want {
+				b.Fatalf("backend digest for %d bytes = %x, want %x", size, out, want)
+			}
+		})
 	}
 }
