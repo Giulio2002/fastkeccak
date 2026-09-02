@@ -50,6 +50,7 @@ func xcDigest(state KeccakState) [32]byte {
 func TestHasherCloneFallbackState(t *testing.T) {
 	const prefix = "shared prefix"
 	var original Hasher
+	original.Write([]byte("sponge side"))
 	original.xc = sha3.NewLegacyKeccak256().(KeccakState)
 	original.xc.Write([]byte(prefix))
 
@@ -57,6 +58,13 @@ func TestHasherCloneFallbackState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
+	if got, want := clone.Sum256(), original.Sum256(); got != want {
+		t.Fatalf("clone digest = %x, original = %x: the copy does not dispatch like the original", got, want)
+	}
+	if clone.sponge != original.sponge {
+		t.Fatal("Clone dropped the sponge state")
+	}
+
 	original.xc.Write([]byte(" original"))
 	clone.xc.Write([]byte(" clone"))
 
