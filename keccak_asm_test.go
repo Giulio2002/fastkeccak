@@ -40,10 +40,10 @@ func TestXorAndPermute(t *testing.T) {
 }
 
 // TestSpongeReadDefersBoundaryPermutation covers Read(rate) followed by
-// Read(k): the only sequence where moving the block permutation to the read
-// that needs it can change the output. TestReadMatchesXCrypto reads once per
-// hasher and TestReadMultipleCalls chunks by 37, so neither lands a call
-// boundary on rate.
+// Read(k), the call boundary neither TestReadMatchesXCrypto (one read per
+// hasher) nor TestReadMultipleCalls (chunks of 37) lands on. Deferring the
+// permutation is output-neutral, so readIdx is what pins the deferral; the
+// byte comparison catches a reorder that permutes the wrong number of times.
 func TestSpongeReadDefersBoundaryPermutation(t *testing.T) {
 	if !useASM {
 		t.Skip("hardware acceleration unavailable on this CPU")
