@@ -249,8 +249,6 @@ func FuzzSum256(f *testing.F) {
 // Comparison benchmarks: fastkeccak vs golang.org/x/crypto/sha3.
 var benchSizes = []int{32, 128, 256, 1024, 4096, 500 * 1024}
 
-var benchmarkDigest [32]byte
-
 func benchName(size int) string {
 	if size >= 1024 {
 		return fmt.Sprintf("%dK", size/1024)
@@ -268,13 +266,13 @@ func BenchmarkFasterKeccak(b *testing.B) {
 			b.SetBytes(int64(size))
 			b.ReportAllocs()
 			for b.Loop() {
-				benchmarkDigest = Sum256(data)
+				Sum256(data)
 			}
 		})
 	}
 }
 
-func BenchmarkXCryptoHasher(b *testing.B) {
+func BenchmarkXCrypto(b *testing.B) {
 	for _, size := range benchSizes {
 		data := make([]byte, size)
 		for i := range data {
@@ -288,8 +286,7 @@ func BenchmarkXCryptoHasher(b *testing.B) {
 			for b.Loop() {
 				h.Reset()
 				h.Write(data)
-				h.Sum(out[:0])
-				benchmarkDigest = out
+				out = [32]byte(h.Sum(out[:0]))
 			}
 		})
 	}
@@ -308,7 +305,7 @@ func BenchmarkFasterKeccakHasher(b *testing.B) {
 			for b.Loop() {
 				h.Reset()
 				h.Write(data)
-				benchmarkDigest = h.Sum256()
+				h.Sum256()
 			}
 		})
 	}
@@ -329,5 +326,4 @@ func BenchmarkKeccakStreaming_Sha3(b *testing.B) {
 		h.Write(data)
 		h.Read(buf[:])
 	}
-	benchmarkDigest = buf
 }
