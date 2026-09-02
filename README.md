@@ -16,6 +16,12 @@ on different hosts. On darwin/arm64 the assembly is assumed rather than probed,
 and the `purego` tag or an unsupported GOARCH selects the fallback at build
 time.
 
+## Install
+
+```bash
+go get github.com/erigontech/fastkeccak
+```
+
 ## Usage
 
 ```go
