@@ -224,17 +224,14 @@ func (h *Hasher) Read(out []byte) (int, error) {
 
 // Clone returns an independent copy of h in its current state.
 func (h *Hasher) Clone() (*Hasher, error) {
-	if useASM {
-		return &Hasher{sponge: h.sponge}, nil
+	if h.xc != nil {
+		state, err := cloneXCrypto(h.xc)
+		if err != nil {
+			return nil, err
+		}
+		return &Hasher{xc: state}, nil
 	}
-	if h.xc == nil {
-		return &Hasher{}, nil
-	}
-	state, err := cloneXCrypto(h.xc)
-	if err != nil {
-		return nil, err
-	}
-	return &Hasher{xc: state}, nil
+	return &Hasher{sponge: h.sponge}, nil
 }
 
 // xorIn XORs data into the first len(data) bytes of state using uint64 loads.

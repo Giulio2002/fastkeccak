@@ -47,7 +47,10 @@ func cloneXCrypto(state KeccakState) (KeccakState, error) {
 		return nil, err
 	}
 
-	clone := sha3.NewLegacyKeccak256().(KeccakState)
+	clone, ok := sha3.NewLegacyKeccak256().(KeccakState)
+	if !ok {
+		return nil, errCloneUnsupported
+	}
 	unmarshaler, ok := clone.(encoding.BinaryUnmarshaler)
 	if !ok {
 		return nil, errCloneUnsupported
