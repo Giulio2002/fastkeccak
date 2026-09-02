@@ -63,8 +63,12 @@ jobs:
           path: testdata/fuzz/
           if-no-files-found: ignore
 
+  # Early warning that a new Go release breaks the package. `stable` is a
+  # moving target, so a Go release could turn every open PR red on a day
+  # nobody touched the repo: this job is advisory and never gates a merge.
   current-go:
     name: Current Go / ${{ matrix.os }}
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -77,8 +81,18 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: stable
-          check-latest: true
       - run: go version
+      # Same reason as the `test` job: without this, a green run does not
+      # prove the assembly backend was the code under test.
+      - name: Report CPU features
+        run: |
+          if [ -r /proc/cpuinfo ]; then
+            grep -m1 -E '^(flags|Features)' /proc/cpuinfo | tr ' ' '\n' \
+              | grep -xE 'bmi1|bmi2|avx2|avx512f|sha3|asimd' | sort -u | paste -sd' ' -
+          else
+            sysctl -n hw.optional.armv8_2_sha3 hw.optional.arm.FEAT_SHA3 2>/dev/null \
+              | paste -sd' ' - | sed 's/^/armv8_2_sha3 FEAT_SHA3: /'
+          fi
       - run: go vet ./...
       - run: go test -race ./...
 
