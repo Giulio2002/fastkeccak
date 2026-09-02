@@ -7,17 +7,41 @@ var benchmarkDigest [32]byte
 func testHasherSum256Allocs(t *testing.T) {
 	t.Helper()
 
-	var h Hasher
-	h.Write([]byte("allocation test"))
-	h.Sum256()
+	input := []byte("allocation test")
 
-	allocs := testing.AllocsPerRun(1000, func() {
-		benchmarkDigest = h.Sum256()
-	})
-	if allocs != 0 {
+	var warm Hasher
+	warm.Write(input)
+	warm.Sum256()
+	if allocs := testing.AllocsPerRun(1000, func() {
+		benchmarkDigest = warm.Sum256()
+	}); allocs != 0 {
 		t.Fatalf("Hasher.Sum256 allocations = %v, want 0", allocs)
 	}
+
+	// A Hasher forced onto the heap costs exactly what one allocated there
+	// to begin with costs, so comparing the two needs no per-platform
+	// constant. A digest buffer held in Hasher itself, rather than behind
+	// the fallback pointer, makes these equal.
+	stack := testing.AllocsPerRun(1000, func() {
+		var h Hasher
+		h.Write(input)
+		benchmarkDigest = h.Sum256()
+	})
+	heap := testing.AllocsPerRun(1000, func() {
+		h := heapHasher()
+		h.Write(input)
+		benchmarkDigest = h.Sum256()
+	})
+	if stack >= heap {
+		t.Fatalf("stack-allocated Hasher costs %v allocations against %v for a heap-allocated one: the Hasher is escaping", stack, heap)
+	}
 }
+
+// heapHasher keeps the baseline honest: inlined, NewFastKeccak's result does
+// not escape the closure either and the compiler stack-allocates it too.
+//
+//go:noinline
+func heapHasher() *Hasher { return &Hasher{} }
 
 func TestHasherSum256Allocs(t *testing.T) {
 	testHasherSum256Allocs(t)
@@ -27,7 +51,6 @@ func benchmarkHasherSum256(b *testing.B) {
 	var h Hasher
 	h.Write([]byte("allocation benchmark"))
 	b.ReportAllocs()
-	b.ResetTimer()
 	for b.Loop() {
 		benchmarkDigest = h.Sum256()
 	}

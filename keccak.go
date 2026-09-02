@@ -9,7 +9,11 @@ package keccak
 //go:generate go run gen_keccakf_bmi2.go
 //go:generate go run github.com/klauspost/asmfmt/cmd/asmfmt@v1.3.2 -w keccakf_amd64_bmi2.s
 
-import "hash"
+import (
+	"hash"
+
+	"golang.org/x/crypto/sha3"
+)
 
 // KeccakState wraps the keccak hasher. In addition to the usual hash methods, it also supports
 // Read to get a variable amount of data from the hash state. Read is faster than Sum
@@ -17,6 +21,18 @@ import "hash"
 type KeccakState interface {
 	hash.Hash
 	Read([]byte) (int, error)
+}
+
+// xcState is the x/crypto fallback plus the scratch buffer Sum256 squeezes
+// into. Keeping the buffer here rather than in Hasher is what stops the
+// interface call from forcing every stack-allocated Hasher onto the heap.
+type xcState struct {
+	KeccakState
+	sum [32]byte
+}
+
+func newXCState() *xcState {
+	return &xcState{KeccakState: sha3.NewLegacyKeccak256().(KeccakState)}
 }
 
 const rate = 136 // sponge rate for Keccak-256: (1600 - 2*256) / 8
