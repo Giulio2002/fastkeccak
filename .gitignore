@@ -1,0 +1,25 @@
+# Binaries and build artifacts
+*.test
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+__debug_bin*
+
+# Profiling and coverage output
+*.out
+*.prof
+*.pprof
+
+# Go workspace files (local dev only)
+go.work
+go.work.sum
+
+# Vendored dependencies
+vendor/
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
