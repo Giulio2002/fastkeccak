@@ -34,3 +34,52 @@ func TestXorAndPermute(t *testing.T) {
 		}
 	}
 }
+
+// backendDigests carries the digest each size produced on the first backend
+// benchmarked, so the second one is checked against it rather than only
+// timed.
+var backendDigests = map[int][32]byte{}
+
+// BenchmarkBackends compares the assembly backend against the x/crypto
+// fallback on the same CPU, to answer whether the assembly is actually
+// faster on this core. It flips useASM, so it must not run in parallel with
+// anything else in the package.
+func BenchmarkBackends(b *testing.B) {
+	restore := useASM
+	defer func() { useASM = restore }()
+
+	if hasASM {
+		b.Run("ASM", func(b *testing.B) { benchmarkBackend(b, true) })
+	}
+	b.Run("XCrypto", func(b *testing.B) { benchmarkBackend(b, false) })
+}
+
+func benchmarkBackend(b *testing.B, native bool) {
+	for _, size := range benchSizes {
+		data := make([]byte, size)
+		for i := range data {
+			data[i] = byte(i)
+		}
+
+		b.Run(benchName(size), func(b *testing.B) {
+			useASM = native
+			var h Hasher
+			// Warm up outside the timer: with useASM false the first Reset
+			// lazily builds the x/crypto hasher, and that one allocation
+			// would otherwise be reported as a per-op cost.
+			h.Reset()
+			var out [32]byte
+			b.SetBytes(int64(size))
+			b.ReportAllocs()
+			for b.Loop() {
+				h.Reset()
+				h.Write(data)
+				h.Read(out[:])
+			}
+			if want, ok := backendDigests[size]; ok && out != want {
+				b.Fatalf("backend digest for %d bytes = %x, other backend gave %x", size, out, want)
+			}
+			backendDigests[size] = out
+		})
+	}
+}
