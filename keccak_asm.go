@@ -36,6 +36,15 @@ func (s *sponge) Write(p []byte) (int, error) {
 		panic("keccak: Write after Read")
 	}
 	n := len(p)
+	if n == 1 {
+		s.buf[s.absorbed] = p[0]
+		s.absorbed++
+		if s.absorbed == rate {
+			xorAndPermute(&s.state, &s.buf[0])
+			s.absorbed = 0
+		}
+		return 1, nil
+	}
 	if s.absorbed > 0 {
 		x := copy(s.buf[s.absorbed:rate], p)
 		s.absorbed += x
