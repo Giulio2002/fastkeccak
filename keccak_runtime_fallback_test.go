@@ -109,8 +109,11 @@ func TestRuntimeFallbackWriteAfterReadPanics(t *testing.T) {
 		if r == nil {
 			t.Fatal("expected panic on Write after Read")
 		}
-		if s, ok := r.(string); !ok || !strings.Contains(s, "Write after Read") {
-			t.Fatalf("recovered %v, want a Write-after-Read panic", r)
+		// The sponge panics "keccak: Write after Read" for the same misuse,
+		// so match the x/crypto prefix: otherwise this passes even when the
+		// fallback is not the code under test.
+		if s, ok := r.(string); !ok || !strings.Contains(s, "sha3: Write after Read") {
+			t.Fatalf("recovered %v, want x/crypto's Write-after-Read panic", r)
 		}
 	}()
 
