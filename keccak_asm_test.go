@@ -74,11 +74,15 @@ func TestKernelKeepsStackCheck(t *testing.T) {
 			found++
 			name, flags, frame := m[1], m[2], m[3]
 			where := f + ":" + strconv.Itoa(i+1)
-			if strings.Contains(flags, "NOSPLIT") {
-				t.Errorf("%s: %s is NOSPLIT, which drops the stack-growth check. "+
-					"That check is the only preemption point in the block loops calling it; "+
-					"without it a large Sum256 blocks every stop-the-world for the whole hash.",
-					where, name)
+			// Reject the whole flag field, not the spelling: textflag.h
+			// defines NOSPLIT as 4 and the assembler takes the number, so
+			// matching the name alone lets the regression back in.
+			if flags != "" {
+				t.Errorf("%s: %s carries assembler flags %q. NOSPLIT (spelled, or as its "+
+					"numeric value 4) drops the stack-growth check, which is the only "+
+					"preemption point in the block loops calling it; without it a large "+
+					"Sum256 blocks every stop-the-world for the whole hash.",
+					where, name, flags)
 			}
 			if n, _ := strconv.Atoi(frame); n < 128 {
 				t.Errorf("%s: %s has a %d-byte frame, under abi.StackSmall (128). The "+
