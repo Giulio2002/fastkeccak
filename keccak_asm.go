@@ -153,7 +153,7 @@ func sum256XCrypto(data []byte) [32]byte {
 // Uses platform assembly when available, x/crypto/sha3 otherwise.
 type Hasher struct {
 	sponge
-	xc *xcState // x/crypto fallback
+	xc KeccakState // x/crypto fallback
 }
 
 // Reset resets the hasher to its initial state.
@@ -162,7 +162,7 @@ func (h *Hasher) Reset() {
 		h.sponge.Reset()
 	} else {
 		if h.xc == nil {
-			h.xc = newXCState()
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
 		} else {
 			h.xc.Reset()
 		}
@@ -174,7 +174,7 @@ func (h *Hasher) Reset() {
 func (h *Hasher) Write(p []byte) (int, error) {
 	if !useASM {
 		if h.xc == nil {
-			h.xc = newXCState()
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
 		}
 		return h.xc.Write(p)
 	}
@@ -182,15 +182,15 @@ func (h *Hasher) Write(p []byte) (int, error) {
 }
 
 // Sum256 finalizes and returns the 32-byte Keccak-256 digest.
-// Leaves the digest the hasher will produce next unchanged, but the fallback
-// squeezes through a scratch buffer, so it is not safe to call concurrently
-// on one Hasher.
+// Does not modify the hasher state.
 func (h *Hasher) Sum256() [32]byte {
 	if !useASM {
 		if h.xc == nil {
 			return Sum256(nil)
 		}
-		return [32]byte(h.xc.Sum(h.xc.sum[:0]))
+		var out [32]byte
+		h.xc.Sum(out[:0])
+		return out
 	}
 	return h.sponge.Sum256()
 }
@@ -214,7 +214,7 @@ func (h *Hasher) Sum(b []byte) []byte {
 func (h *Hasher) Read(out []byte) (int, error) {
 	if !useASM {
 		if h.xc == nil {
-			h.xc = newXCState()
+			h.xc = sha3.NewLegacyKeccak256().(KeccakState)
 		}
 		return h.xc.Read(out)
 	}

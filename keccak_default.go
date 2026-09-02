@@ -18,12 +18,12 @@ func Sum256(data []byte) [32]byte {
 
 // Hasher is a streaming Keccak-256 hasher wrapping x/crypto/sha3.
 type Hasher struct {
-	h *xcState
+	h KeccakState
 }
 
 func (h *Hasher) init() {
 	if h.h == nil {
-		h.h = newXCState()
+		h.h = sha3.NewLegacyKeccak256().(KeccakState)
 	}
 }
 
@@ -41,12 +41,12 @@ func (h *Hasher) Write(p []byte) (int, error) {
 }
 
 // Sum256 finalizes and returns the 32-byte Keccak-256 digest.
-// Leaves the digest the hasher will produce next unchanged, but squeezes
-// through a scratch buffer, so it is not safe to call concurrently on one
-// Hasher.
+// Does not modify the hasher state.
 func (h *Hasher) Sum256() [32]byte {
 	h.init()
-	return [32]byte(h.h.Sum(h.h.sum[:0]))
+	var out [32]byte
+	h.h.Sum(out[:0])
+	return out
 }
 
 // Sum appends the current Keccak-256 digest to b and returns the resulting slice.

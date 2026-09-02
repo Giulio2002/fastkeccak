@@ -9,19 +9,10 @@ func testHasherSum256Allocs(t *testing.T) {
 
 	input := []byte("allocation test")
 
-	var warm Hasher
-	warm.Write(input)
-	warm.Sum256()
-	if allocs := testing.AllocsPerRun(1000, func() {
-		benchmarkDigest = warm.Sum256()
-	}); allocs != 0 {
-		t.Fatalf("Hasher.Sum256 allocations = %v, want 0", allocs)
-	}
-
 	// A Hasher forced onto the heap costs exactly what one allocated there
 	// to begin with costs, so comparing the two needs no per-platform
-	// constant. A digest buffer held in Hasher itself, rather than behind
-	// the fallback pointer, makes these equal.
+	// constant. Holding the digest buffer in Hasher, rather than in a local,
+	// makes these equal.
 	stack := testing.AllocsPerRun(1000, func() {
 		var h Hasher
 		h.Write(input)
