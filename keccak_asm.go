@@ -149,8 +149,9 @@ func sum256XCrypto(data []byte) [32]byte {
 	return out
 }
 
-// Hasher is a streaming Keccak-256 hasher.
-// Uses platform assembly when available, x/crypto/sha3 otherwise.
+// Hasher is a streaming Keccak-256 hasher. It uses platform assembly when
+// available and x/crypto/sha3 otherwise. A Hasher must not be copied after
+// first use; use Clone to create an independent copy.
 type Hasher struct {
 	sponge
 	xc KeccakState // x/crypto fallback
@@ -219,6 +220,20 @@ func (h *Hasher) Read(out []byte) (int, error) {
 		return h.xc.Read(out)
 	}
 	return h.sponge.Read(out)
+}
+
+// Clone returns an independent copy of h in its current state. It carries
+// both sub-states, so the copy dispatches the same way the original does for
+// any value of useASM.
+func (h *Hasher) Clone() (*Hasher, error) {
+	if h.xc == nil {
+		return &Hasher{sponge: h.sponge}, nil
+	}
+	state, err := cloneXCrypto(h.xc)
+	if err != nil {
+		return nil, err
+	}
+	return &Hasher{sponge: h.sponge, xc: state}, nil
 }
 
 // xorIn XORs data into the first len(data) bytes of state using uint64 loads.

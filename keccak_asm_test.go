@@ -5,6 +5,8 @@ package keccak
 import (
 	"math/rand"
 	"testing"
+
+	"golang.org/x/crypto/sha3"
 )
 
 // TestXorAndPermute verifies the fused XOR+permute assembly entry point
@@ -32,5 +34,44 @@ func TestXorAndPermute(t *testing.T) {
 		if a != b {
 			t.Fatalf("iteration %d: xorAndPermute diverges from xorIn+keccakF1600\ngot:  %x\nwant: %x", i, a, b)
 		}
+	}
+}
+
+func xcDigest(state KeccakState) [32]byte {
+	var out [32]byte
+	state.Sum(out[:0])
+	return out
+}
+
+// TestHasherCloneFallbackState covers Clone on a receiver whose state lives in
+// the x/crypto fallback while the package dispatches to assembly. Building the
+// receiver directly keeps the test off the useASM global, which is only safe
+// to write while nothing else in the package runs concurrently.
+func TestHasherCloneFallbackState(t *testing.T) {
+	const prefix = "shared prefix"
+	var original Hasher
+	original.Write([]byte("sponge side"))
+	original.xc = sha3.NewLegacyKeccak256().(KeccakState)
+	original.xc.Write([]byte(prefix))
+
+	clone, err := original.Clone()
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	if got, want := clone.Sum256(), original.Sum256(); got != want {
+		t.Fatalf("clone digest = %x, original = %x: the copy does not dispatch like the original", got, want)
+	}
+	if clone.sponge != original.sponge {
+		t.Fatal("Clone dropped the sponge state")
+	}
+
+	original.xc.Write([]byte(" original"))
+	clone.xc.Write([]byte(" clone"))
+
+	if got, want := xcDigest(original.xc), Sum256([]byte(prefix+" original")); got != want {
+		t.Fatalf("original digest = %x, want %x", got, want)
+	}
+	if got, want := xcDigest(clone.xc), Sum256([]byte(prefix+" clone")); got != want {
+		t.Fatalf("clone digest = %x, want %x", got, want)
 	}
 }

@@ -16,7 +16,8 @@ func Sum256(data []byte) [32]byte {
 	return out
 }
 
-// Hasher is a streaming Keccak-256 hasher wrapping x/crypto/sha3.
+// Hasher is a streaming Keccak-256 hasher wrapping x/crypto/sha3. A Hasher
+// must not be copied after first use; use Clone to create an independent copy.
 type Hasher struct {
 	h KeccakState
 }
@@ -68,4 +69,16 @@ func (h *Hasher) BlockSize() int { return rate }
 func (h *Hasher) Read(out []byte) (int, error) {
 	h.init()
 	return h.h.Read(out)
+}
+
+// Clone returns an independent copy of h in its current state.
+func (h *Hasher) Clone() (*Hasher, error) {
+	if h.h == nil {
+		return &Hasher{}, nil
+	}
+	state, err := cloneXCrypto(h.h)
+	if err != nil {
+		return nil, err
+	}
+	return &Hasher{h: state}, nil
 }
