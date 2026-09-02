@@ -79,8 +79,14 @@ func main() {
 	// Single function: keccakF1600BMI2(a *[200]byte, buf *byte)
 	// When buf != nil, XORs rate bytes into state before permuting.
 	// When buf == nil, just permutes.
+	// Do NOT add NOSPLIT here, and do not shrink the frame below 128 bytes.
+	// The frame holds the round temp state, and its stack check is the only
+	// preemption point in the callers' block loops: assembly is not
+	// async-preemptible, so without it a large Sum256 or Write holds every P
+	// in stop-the-world until it finishes. The arm64 kernel omits NOSPLIT for
+	// the same reason.
 	p("// func keccakF1600BMI2(a *[200]byte, buf *byte)")
-	p("TEXT ·keccakF1600BMI2(SB), NOSPLIT, $%d-16", fsize)
+	p("TEXT ·keccakF1600BMI2(SB), $%d-16", fsize)
 	p("\tMOVQ a+0(FP), DI")
 	p("\tMOVQ buf+8(FP), BX")
 	p("\tTESTQ BX, BX")
