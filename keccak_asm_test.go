@@ -5,6 +5,8 @@ package keccak
 import (
 	"math/rand"
 	"testing"
+
+	"golang.org/x/crypto/sha3"
 )
 
 // TestXorAndPermute verifies the fused XOR+permute assembly entry point
@@ -35,11 +37,6 @@ func TestXorAndPermute(t *testing.T) {
 	}
 }
 
-// backendDigests carries the digest each size produced on the first backend
-// benchmarked, so the second one is checked against it rather than only
-// timed.
-var backendDigests = map[int][32]byte{}
-
 // BenchmarkBackends compares the assembly backend against the x/crypto
 // fallback on the same CPU, to answer whether the assembly is actually
 // faster on this core. It flips useASM, so it must not run in parallel with
@@ -61,6 +58,11 @@ func benchmarkBackend(b *testing.B, native bool) {
 			data[i] = byte(i)
 		}
 
+		ref := sha3.NewLegacyKeccak256().(KeccakState)
+		ref.Write(data)
+		var want [32]byte
+		ref.Read(want[:])
+
 		b.Run(benchName(size), func(b *testing.B) {
 			useASM = native
 			var h Hasher
@@ -76,10 +78,12 @@ func benchmarkBackend(b *testing.B, native bool) {
 				h.Write(data)
 				h.Read(out[:])
 			}
-			if want, ok := backendDigests[size]; ok && out != want {
-				b.Fatalf("backend digest for %d bytes = %x, other backend gave %x", size, out, want)
+			// Against x/crypto, not against the other arm: a -bench filter
+			// that runs only one arm would leave a cross-arm check with
+			// nothing to compare, and report success either way.
+			if out != want {
+				b.Fatalf("backend digest for %d bytes = %x, want %x", size, out, want)
 			}
-			backendDigests[size] = out
 		})
 	}
 }
